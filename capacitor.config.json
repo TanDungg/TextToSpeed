@@ -1,0 +1,5 @@
+{
+  "appId": "com.chatbox.myapp",
+  "appName": "ChatBox",
+  "webDir": "dist"
+}

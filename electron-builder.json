@@ -1,0 +1,16 @@
+{
+  "appId": "com.mycompany.myapp",
+  "productName": "ChatBox",
+  "directories": {
+    "buildResources": "build",
+    "output": "release"
+  },
+  "files": ["dist-electron/**/*", "electron/**/*", "package.json"],
+  "win": {
+    "target": "nsis"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true
+  }
+}
