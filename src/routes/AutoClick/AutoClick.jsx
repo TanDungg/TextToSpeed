@@ -43,113 +43,125 @@ const AutoClick = () => {
   }, []);
 
   return (
-    <div className="autoclick-container" style={{ paddingBottom: '20px' }}>
-      <Card bordered={false} className="tts-card">
-        <div className="main-header" style={{ marginBottom: 24 }}>
-          <div className="main-title-section">
-            <Title level={2} className="tts-gradient-title">Auto Clicker Pro</Title>
-            <div className="main-status" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
-              <Sparkles size={16} className="text-amber-500" />
-              <Text type="secondary">Mô phỏng click chuột tự động</Text>
-            </div>
-          </div>
-        </div>
+    <div className="tts-container">
+      <Card variant="borderless" className="tts-card">
+        <div className="tts-layout">
+          <div className="tts-main-content">
+            <header className="main-header">
+              <Title level={1} className="tts-gradient-title">
+                Auto Clicker Pro
+              </Title>
+              <div className="main-status">
+                <Sparkles size={18} style={{ color: '#f59e0b' }} />
+                <span>Mô phỏng click chuột tự động</span>
+                <Divider type="vertical" />
+                <Tag color="blue" bordered={false} style={{ borderRadius: '6px', fontWeight: 600 }}>
+                  v1.0.2
+                </Tag>
+              </div>
+            </header>
 
-        <Row gutter={[24, 24]}>
-          <Col xs={24} md={12}>
-            <div className="config-item" style={{ marginBottom: '20px' }}>
-              <Text strong className="block mb-2">
-                <Space><Clock size={16} /> Khoảng cách (ms)</Space>
-              </Text>
-              <InputNumber 
-                min={10} 
-                max={100000} 
-                value={config.interval} 
-                onChange={(v) => setConfig({...config, interval: v})} 
-                style={{ width: '100%', borderRadius: '8px' }} 
+            <Row gutter={[32, 32]}>
+              <Col xs={24} md={12}>
+                <div className="tts-voice-box">
+                  <div className="voice-label">
+                    <Clock size={18} /> Khoảng cách (ms)
+                  </div>
+                  <InputNumber
+                    min={10}
+                    max={100000}
+                    value={config.interval}
+                    onChange={(v) => setConfig({ ...config, interval: v })}
+                    style={{ width: '100%' }}
+                    className="custom-input-number"
+                    size="large"
+                    disabled={isActive}
+                  />
+                  <Text type="secondary" style={{ fontSize: '12px', marginTop: '8px', display: 'block' }}>
+                    Tối thiểu 10ms (100 lần/giây)
+                  </Text>
+                </div>
+
+                <div className="tts-voice-box" style={{ marginTop: '24px' }}>
+                  <div className="voice-label">
+                    <MousePointer2 size={18} /> Nút chuột
+                  </div>
+                  <Select
+                    value={config.button}
+                    onChange={(v) => setConfig({ ...config, button: v })}
+                    style={{ width: '100%' }}
+                    className="custom-select"
+                    size="large"
+                    disabled={isActive}
+                    options={[
+                      { value: 'left', label: 'Chuột trái' },
+                      { value: 'right', label: 'Chuột phải' },
+                      { value: 'middle', label: 'Chuột giữa' },
+                    ]}
+                  />
+                </div>
+              </Col>
+
+              <Col xs={24} md={12}>
+                <div className="tts-voice-box">
+                  <div className="voice-label">
+                    <ThunderboltOutlined /> Kiểu click
+                  </div>
+                  <Select
+                    value={config.type}
+                    onChange={(v) => setConfig({ ...config, type: v })}
+                    style={{ width: '100%' }}
+                    className="custom-select"
+                    size="large"
+                    disabled={isActive}
+                    options={[
+                      { value: 'single', label: 'Click đơn' },
+                      { value: 'double', label: 'Click đúp' },
+                    ]}
+                  />
+                </div>
+
+                <div className="tts-voice-box" style={{ marginTop: '24px' }}>
+                  <div className="voice-label">
+                    <Settings2 size={18} /> Phím tắt (Hotkeys)
+                  </div>
+                  <div className="hotkey-display">
+                    <Text>Bắt đầu / Dừng</Text>
+                    <Tag color="blue" bordered={false} className="hotkey-tag">
+                      {config.hotkey}
+                    </Tag>
+                  </div>
+                </div>
+              </Col>
+            </Row>
+
+            <Divider style={{ margin: '32px 0' }} />
+
+            <div className="action-footer">
+              <Button
+                type="primary"
                 size="large"
-                disabled={isActive}
-              />
-              <Text type="secondary" style={{ fontSize: '12px' }}>Tối thiểu 10ms (100 lần/giây)</Text>
-            </div>
+                danger={isActive}
+                icon={isActive ? <StopOutlined style={{ fontSize: '20px' }} /> : <PlayCircleOutlined style={{ fontSize: '20px' }} />}
+                onClick={toggleAutoClick}
+                className={`autoclick-btn-main ${isActive ? 'active' : ''}`}
+              >
+                {isActive ? 'DỪNG AUTO CLICK' : 'BẮT ĐẦU AUTO CLICK'}
+              </Button>
 
-            <div className="config-item" style={{ marginBottom: '20px' }}>
-              <Text strong className="block mb-2">
-                <Space><MousePointer2 size={16} /> Nút chuột</Space>
-              </Text>
-              <Select 
-                value={config.button} 
-                onChange={(v) => setConfig({...config, button: v})} 
-                style={{ width: '100%' }} 
-                size="large"
-                disabled={isActive}
-                options={[
-                  { value: 'left', label: 'Chuột trái' },
-                  { value: 'right', label: 'Chuột phải' },
-                  { value: 'middle', label: 'Chuột giữa' },
-                ]}
-              />
-            </div>
-          </Col>
-
-          <Col xs={24} md={12}>
-            <div className="config-item" style={{ marginBottom: '20px' }}>
-              <Text strong className="block mb-2">
-                <Space><ThunderboltOutlined /> Kiểu click</Space>
-              </Text>
-              <Select 
-                value={config.type} 
-                onChange={(v) => setConfig({...config, type: v})} 
-                style={{ width: '100%' }} 
-                size="large"
-                disabled={isActive}
-                options={[
-                  { value: 'single', label: 'Click đơn' },
-                  { value: 'double', label: 'Click đúp' },
-                ]}
-              />
-            </div>
-
-            <div className="config-item" style={{ marginBottom: '20px' }}>
-              <Text strong className="block mb-2">
-                <Space><Settings2 size={16} /> Phím tắt (Hotkeys)</Space>
-              </Text>
-              <div style={{ padding: '8px 12px', background: '#f8fafc', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text>Bắt đầu / Dừng</Text>
-                <Tag color="blue" style={{ fontSize: '14px', padding: '2px 8px' }}>{config.hotkey}</Tag>
+              <div className="status-alert-box">
+                <Alert
+                  message={
+                    isActive
+                      ? 'Đang chạy... Di chuyển chuột đến vị trí cần click.'
+                      : `Nhấn phím ${config.hotkey} để Bắt đầu/Dừng bất cứ lúc nào.`
+                  }
+                  type={isActive ? 'warning' : 'info'}
+                  showIcon
+                  className="custom-alert"
+                />
               </div>
             </div>
-          </Col>
-        </Row>
-
-        <Divider />
-
-        <div style={{ textAlign: 'center', padding: '20px 0' }}>
-          <Button 
-            type="primary" 
-            size="large" 
-            danger={isActive}
-            icon={isActive ? <StopOutlined /> : <PlayCircleOutlined />}
-            onClick={toggleAutoClick}
-            style={{ 
-                height: '60px', 
-                width: '250px', 
-                borderRadius: '30px', 
-                fontSize: '18px', 
-                fontWeight: '700',
-                boxShadow: isActive ? '0 10px 15px -3px rgba(239, 68, 68, 0.4)' : '0 10px 15px -3px rgba(59, 130, 246, 0.4)'
-            }}
-          >
-            {isActive ? 'DỪNG AUTO CLICK' : 'BẮT ĐẦU AUTO CLICK'}
-          </Button>
-          
-          <div style={{ marginTop: '20px' }}>
-            <Alert 
-              message={isActive ? "Đang chạy... Hãy di chuyển chuột đến vị trí cần click." : `Nhấn phím ${config.hotkey} để Bắt đầu/Dừng bất cứ lúc nào.`} 
-              type={isActive ? "warning" : "info"} 
-              showIcon 
-              style={{ borderRadius: '12px' }}
-            />
           </div>
         </div>
       </Card>

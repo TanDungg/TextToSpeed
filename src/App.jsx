@@ -13,6 +13,8 @@ const App = () => {
     return {
       useAI: true,
       openaiKey: import.meta.env.VITE_OPENAI_API_KEY || '',
+      fptKey: '',
+      googleKey: '',
     };
   });
 
@@ -42,17 +44,25 @@ const App = () => {
   ];
 
   return (
-    <div style={{ width: '100%', minHeight: '100vh', backgroundColor: '#f3f4f6', padding: '16px' }}>
-      <div style={{ maxWidth: '1000px', margin: '0 auto', position: 'relative' }}>
-        <div style={{ position: 'absolute', right: 0, top: 8, zIndex: 10 }}>
+    <div className="app-main-layout">
+      <div className="app-bg-accent"></div>
+      <div className="app-content-wrapper">
+        <div className="app-header-actions">
           <Button
             icon={<SettingOutlined />}
             shape="circle"
             size="large"
+            className="settings-trigger"
             onClick={() => setShowSettings(true)}
           />
         </div>
-        <Tabs defaultActiveKey="1" items={items} centered size="large" />
+        <Tabs
+          defaultActiveKey="1"
+          items={items}
+          centered
+          size="large"
+          className="main-navigation-tabs"
+        />
       </div>
 
       <SettingsModal

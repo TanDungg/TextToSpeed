@@ -1,17 +1,5 @@
 import { useState, useEffect } from 'react';
-import {
-  Card,
-  Input,
-  Button,
-  Slider,
-  Typography,
-  Row,
-  Col,
-  Space,
-  Divider,
-  message,
-  Tag,
-} from 'antd';
+import { Card, Input, Button, Slider, Typography, Divider, message, Tag, Select } from 'antd';
 import { PlayCircleOutlined, HistoryOutlined, DashboardOutlined } from '@ant-design/icons';
 import { Volume2, Sparkles, Mic2 } from 'lucide-react';
 import HistoryModal from '../../components/History/HistoryModal';
@@ -34,42 +22,42 @@ const AI_VOICES = [
   // Google Cloud - Các giọng Neural2 & Wavenet
   {
     id: 'vi-VN-Wavenet-D',
-    name: 'Cậu bé VN (Google)',
+    name: 'Neural (Bé trai VN)',
     provider: 'Google',
     lang: 'vi-VN',
     type: 'child',
   },
   {
     id: 'vi-VN-Wavenet-A',
-    name: 'Nữ VN (Google)',
+    name: 'Neural (Nữ VN)',
     provider: 'Google',
     lang: 'vi-VN',
     type: 'adult',
   },
   {
     id: 'vi-VN-Wavenet-B',
-    name: 'Nam VN (Google)',
+    name: 'Neural (Nam VN)',
     provider: 'Google',
     lang: 'vi-VN',
     type: 'adult',
   },
   {
     id: 'en-US-Wavenet-D',
-    name: 'US Boy (English)',
+    name: 'Neural (US Boy)',
     provider: 'Google',
     lang: 'en-US',
     type: 'child',
   },
   {
     id: 'en-GB-Wavenet-D',
-    name: 'UK Boy (English)',
+    name: 'Neural (UK Boy)',
     provider: 'Google',
     lang: 'en-GB',
     type: 'child',
   },
   {
     id: 'en-AU-Wavenet-D',
-    name: 'AU Boy (English)',
+    name: 'Neural (AU Boy)',
     provider: 'Google',
     lang: 'en-AU',
     type: 'child',
@@ -79,13 +67,24 @@ const AI_VOICES = [
 const TextToSpeed = ({ settings }) => {
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(false);
-  const [selectedVoice, setSelectedVoice] = useState(AI_VOICES[0]);
-  const [speed, setSpeed] = useState(1);
-  const [pitch, setPitch] = useState(1);
+  const [selectedVoiceId, setSelectedVoiceId] = useState(AI_VOICES[0].id);
+  const [systemVoices, setSystemVoices] = useState([]);
+  const [rate, setRate] = useState(1);
+  const [pitch, setPitch] = useState(0);
+  const [delay, setDelay] = useState(0);
   const [history, setHistory] = useState(() =>
     JSON.parse(localStorage.getItem('tts_history') || '[]')
   );
-  const [showHistory, setShowHistory] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+
+  useEffect(() => {
+    const loadVoices = () => {
+      const voices = window.speechSynthesis.getVoices();
+      setSystemVoices(voices.filter((v) => v.lang.includes('vi') || v.lang.includes('en')));
+    };
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('tts_history', JSON.stringify(history));
@@ -93,190 +92,225 @@ const TextToSpeed = ({ settings }) => {
 
   const handleSpeak = async () => {
     if (!text.trim()) return message.warning('Vui lòng nhập văn bản!');
+
+    // Tìm trong AI_VOICES trước
+    let selectedVoice = AI_VOICES.find((v) => v.id === selectedVoiceId);
+    let isSystemVoice = false;
+
+    if (!selectedVoice) {
+      selectedVoice = systemVoices.find((v) => v.voiceURI === selectedVoiceId);
+      isSystemVoice = true;
+    }
+
+    if (!selectedVoice) return;
+
     setLoading(true);
     try {
-      let audioUrl;
-      if (selectedVoice.provider === 'FPT') {
-        audioUrl = await TTSProvider.speakWithFPT(
-          text,
-          selectedVoice.id,
-          settings.fptKey,
-          speed,
-          pitch
-        );
-      } else if (selectedVoice.provider === 'Google') {
-        audioUrl = await TTSProvider.speakWithGoogleCloud(
-          text,
-          selectedVoice.id,
-          settings.googleKey,
-          speed,
-          pitch
-        );
-      }
+      if (isSystemVoice) {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.voice = selectedVoice;
+        utterance.rate = rate;
+        utterance.pitch = pitch + 1; // Hệ thống dùng 0-2, pitch state là -20 đến 20
+        window.speechSynthesis.speak(utterance);
+      } else {
+        let audioUrl;
+        if (selectedVoice.provider === 'FPT') {
+          audioUrl = await TTSProvider.speakWithFPT(text, selectedVoice.id, settings.fptKey, rate);
+        } else if (selectedVoice.provider === 'Google') {
+          audioUrl = await TTSProvider.speakWithGoogleCloud(
+            text,
+            selectedVoice.id,
+            settings.googleKey,
+            pitch,
+            rate
+          );
+        } else {
+          audioUrl = await TTSProvider.speakWithOpenAI(text, 'alloy', settings.openaiKey, rate);
+        }
 
-      if (!audioUrl) {
-        throw new Error('Không nhận được dữ liệu âm thanh từ máy chủ.');
+        if (!audioUrl) throw new Error('Không nhận được dữ liệu âm thanh.');
+        const finalUrl = typeof audioUrl === 'string' ? audioUrl : URL.createObjectURL(audioUrl);
+        const audio = new Audio(finalUrl);
+        await audio.play();
       }
-
-      const audio = new Audio(audioUrl);
-      await audio.play();
 
       setHistory([
         {
           id: Date.now(),
-          text: text.substring(0, 100),
-          voice: selectedVoice.name,
-          date: new Date().toLocaleString(),
-          fullText: text,
-          speed,
+          text: text,
+          voiceId: selectedVoiceId,
+          voiceName: isSystemVoice ? selectedVoice.name : selectedVoice.name,
+          provider: isSystemVoice ? 'System' : selectedVoice.provider,
+          timestamp: new Date().toISOString(),
+          rate,
           pitch,
         },
         ...history,
       ]);
     } catch (err) {
       console.error('TTS Error:', err);
-      message.error('Lỗi phát âm thanh: ' + err.message);
+      message.error('Lỗi: ' + err.message);
     } finally {
       setLoading(false);
     }
-  };
+  };;
 
   return (
     <div className="tts-container">
-      <Card bordered={false} className="tts-card">
-        {/* Header */}
-        <div className="main-header" style={{ marginBottom: 32 }}>
-          <Row justify="space-between" align="middle">
-            <Col>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                <div className="header-icon-box">
-                  <Volume2 size={30} />
-                </div>
-                <div>
-                  <Title level={2} className="tts-gradient-title" style={{ margin: 0 }}>
-                    AI Voice Master
-                  </Title>
-                  <Space size={4}>
-                    <Sparkles size={14} className="text-amber-500" />
-                    <Text type="secondary">Chuyển văn bản thành giọng nói tự nhiên</Text>
-                  </Space>
-                </div>
+      <Card variant="borderless" className="tts-card">
+        <div className="tts-layout">
+          <div className="tts-main-content">
+            <header className="main-header">
+              <Title level={1} className="tts-gradient-title">
+                AI Voice Master
+              </Title>
+              <div className="main-status">
+                <Sparkles size={18} style={{ color: '#f59e0b' }} />
+                <span>Trình tạo giọng nói AI cao cấp</span>
+                <Divider type="vertical" />
+                <Tag color="blue" bordered={false} style={{ borderRadius: '6px', fontWeight: 600 }}>
+                  v1.2.0
+                </Tag>
               </div>
-            </Col>
-            <Col>
-              <Button
-                icon={<HistoryOutlined />}
-                onClick={() => setShowHistory(true)}
-                className="btn-history"
-              >
-                Lịch sử
-              </Button>
-            </Col>
-          </Row>
-        </div>
+            </header>
 
-        {/* Input Area */}
-        <div className="text-input-area" style={{ marginBottom: 24 }}>
-          <TextArea
-            placeholder="Nhập nội dung bạn muốn chuyển thành giọng nói tại đây..."
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            rows={6}
-            variant="borderless"
-            style={{ resize: 'none' }}
-          />
-          <div style={{ textAlign: 'right', marginTop: 8 }}>
-            <Text type="secondary">{text.length} ký tự</Text>
-          </div>
-        </div>
-
-        {/* Configurations */}
-        <Row gutter={[24, 24]}>
-          <Col xs={24} md={10}>
-            <div className="config-section-box">
-              <div className="section-title">
-                <DashboardOutlined />
-                <span>Điều chỉnh âm thanh</span>
+            <div className="input-section">
+              <div className="input-header">
+                <span className="slider-icon-text">
+                  <Volume2 size={16} /> Nhập nội dung văn bản
+                </span>
+                <span className="char-count">{text.length} / 5000</span>
               </div>
-              <div style={{ marginBottom: 20 }}>
-                <div className="slider-label-row">
-                  <Text strong>Tốc độ đọc</Text>
-                  <Tag color="blue">{speed}x</Tag>
+              <TextArea
+                rows={8}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder="Ví dụ: Xin chào, tôi là trợ lý ảo của bạn..."
+                className="tts-textarea"
+              />
+            </div>
+
+            <div className="tts-voice-box">
+              <div className="voice-label">
+                <Mic2 size={18} /> Chọn giọng nói thông minh
+              </div>
+              <Select
+                showSearch
+                className="custom-select"
+                placeholder="Chọn một giọng nói..."
+                value={selectedVoiceId}
+                onChange={setSelectedVoiceId}
+                optionFilterProp="label"
+                options={[
+                  {
+                    label: 'FPT.AI - Giọng Việt Nam',
+                    options: AI_VOICES.filter((v) => v.provider === 'FPT').map((v) => ({
+                      value: v.id,
+                      label: v.name,
+                    })),
+                  },
+                  {
+                    label: 'Google Cloud - Cao cấp',
+                    options: AI_VOICES.filter((v) => v.provider === 'Google').map((v) => ({
+                      value: v.id,
+                      label: v.name,
+                    })),
+                  },
+                  {
+                    label: 'Giọng hệ thống (Miễn phí)',
+                    options: systemVoices.map((v) => ({
+                      value: v.voiceURI,
+                      label: `${v.name} (${v.lang})`,
+                    })),
+                  },
+                ]}
+              />
+            </div>
+
+            <div className="tts-sliders-grid">
+              <div className="slider-item">
+                <div className="slider-label">
+                  <span className="slider-icon-text">
+                    <DashboardOutlined /> Tốc độ
+                  </span>
+                  <span className="slider-value">x{rate}</span>
                 </div>
                 <Slider
                   min={0.5}
-                  max={2}
+                  max={2.0}
                   step={0.1}
-                  value={speed}
-                  onChange={setSpeed}
-                  className="custom-tts-slider"
+                  value={rate}
+                  onChange={setRate}
+                  tooltip={{ open: false }}
                 />
               </div>
-              <div>
-                <div className="slider-label-row">
-                  <Text strong>Cao độ (Pitch)</Text>
-                  <Tag color="cyan">{pitch}x</Tag>
+
+              <div className="slider-item">
+                <div className="slider-label">
+                  <span className="slider-icon-text">
+                    <Volume2 size={16} /> Cao độ
+                  </span>
+                  <span className="slider-value">{pitch}</span>
                 </div>
                 <Slider
-                  min={0.5}
-                  max={2}
-                  step={0.1}
+                  min={-20}
+                  max={20}
+                  step={1}
                   value={pitch}
                   onChange={setPitch}
-                  className="custom-tts-slider"
+                  tooltip={{ open: false }}
+                />
+              </div>
+
+              <div className="slider-item">
+                <div className="slider-label">
+                  <span className="slider-icon-text">
+                    <HistoryOutlined /> Độ trễ
+                  </span>
+                  <span className="slider-value">{delay}s</span>
+                </div>
+                <Slider
+                  min={0}
+                  max={5}
+                  step={0.5}
+                  value={delay}
+                  onChange={setDelay}
+                  tooltip={{ open: false }}
                 />
               </div>
             </div>
-          </Col>
 
-          <Col xs={24} md={14}>
-            <div className="config-section-box">
-              <div className="section-title">
-                <Mic2 size={18} />
-                <span>Chọn giọng đọc</span>
-              </div>
-              <div className="voice-selection-grid">
-                {AI_VOICES.map((voice) => (
-                  <div
-                    key={voice.id}
-                    className={`voice-card ${selectedVoice.id === voice.id ? 'selected' : ''}`}
-                    onClick={() => setSelectedVoice(voice)}
-                  >
-                    <span className="voice-name">{voice.name}</span>
-                    <span className="voice-provider">{voice.provider}</span>
-                  </div>
-                ))}
-              </div>
+            <div className="controls-row">
+              <Button
+                type="primary"
+                icon={<PlayCircleOutlined style={{ fontSize: '22px' }} />}
+                loading={loading}
+                onClick={handleSpeak}
+                className="tts-btn-play"
+              >
+                {loading ? 'ĐANG XỬ LÝ...' : 'CHUYỂN ĐỔI & PHÁT NGAY'}
+              </Button>
+
+              <Button
+                icon={<HistoryOutlined />}
+                onClick={() => setShowHistoryModal(true)}
+                className="tts-btn-action"
+                title="Lịch sử"
+              />
             </div>
-          </Col>
-        </Row>
-
-        <Divider style={{ margin: '32px 0' }} />
-
-        {/* Action Button */}
-        <div style={{ textAlign: 'center' }}>
-          <Button
-            type="primary"
-            size="large"
-            icon={<PlayCircleOutlined style={{ fontSize: '24px' }} />}
-            loading={loading}
-            onClick={handleSpeak}
-            className="btn-speak-main"
-          >
-            CHUYỂN THÀNH GIỌNG NÓI
-          </Button>
+          </div>
         </div>
       </Card>
 
       <HistoryModal
-        open={showHistory}
-        onCancel={() => setShowHistory(false)}
+        open={showHistoryModal}
+        onCancel={() => setShowHistoryModal(false)}
         history={history}
-        onClearHistory={() => setHistory([])}
-        onSelectItem={(item) => {
-          setText(item.fullText);
-          setSpeed(item.speed);
-          setPitch(item.pitch);
+        onClear={() => setHistory([])}
+        onSelect={(item) => {
+          setText(item.text || item.fullText || '');
+          setSelectedVoiceId(item.voiceId || AI_VOICES[0].id);
+          setShowHistoryModal(false);
         }}
       />
     </div>
