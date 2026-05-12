@@ -42,22 +42,6 @@ const HistoryList = ({ history, onClearHistory, onSelectItem, hideHeader = false
           />
         )}
       </div>
-
-      {history.length > 0 && (
-        <div className="history-footer">
-          <Divider className="history-footer-divider" />
-          <Button
-            danger
-            block
-            type="primary"
-            icon={<DeleteOutlined />}
-            onClick={onClearHistory}
-            className="history-delete-btn"
-          >
-            Xóa toàn bộ lịch sử
-          </Button>
-        </div>
-      )}
     </div>
   );
 };
