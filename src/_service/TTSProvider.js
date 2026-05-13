@@ -39,10 +39,16 @@ class TTSProvider {
   /**
    * FPT.AI TTS (V5 Standard)
    */
-  static async speakWithFPT(text, voice, apiKey, speed = 0) {
+  static async speakWithFPT(text, voice, apiKey, speed = 0, pitch = 0) {
     if (!apiKey) throw new Error('Vui lòng cấu hình API Key FPT.AI.');
 
-    const cleanText = text.replace(/[\n\r]+/g, ' ').trim();
+    let cleanText = text.replace(/[\n\r]+/g, ' ').trim();
+    
+    // Nếu có pitch, sử dụng SSML để FPT.AI hiểu được
+    if (pitch !== 0) {
+      const pitchPercent = pitch > 0 ? `+${pitch}%` : `${pitch}%`;
+      cleanText = `<speak><prosody pitch="${pitchPercent}">${cleanText}</prosody></speak>`;
+    }
 
     try {
       const targetUrl = `https://api.fpt.ai/hmi/tts/v5?v=${voice || 'banmai'}&t=${Date.now()}`;

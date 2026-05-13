@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { Tabs, Button } from 'antd';
 import TextToSpeed from './routes/TextToSpeed/TextToSpeed';
 import AutoClick from './routes/AutoClick/AutoClick';
+import AIVideoCreator from './routes/AIVideoCreator/AIVideoCreator';
 import SettingsModal from './components/Setting/SettingsModal';
-import { SoundOutlined, SettingOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { SoundOutlined, SettingOutlined, ThunderboltOutlined, VideoCameraOutlined } from '@ant-design/icons';
 
 const App = () => {
   const [showSettings, setShowSettings] = useState(false);
@@ -15,6 +16,7 @@ const App = () => {
       openaiKey: import.meta.env.VITE_OPENAI_API_KEY || '',
       fptKey: '',
       googleKey: '',
+      geminiKey: '',
     };
   });
 
@@ -40,6 +42,15 @@ const App = () => {
         </span>
       ),
       children: <AutoClick />,
+    },
+    {
+      key: '3',
+      label: (
+        <span>
+          <VideoCameraOutlined /> Video AI
+        </span>
+      ),
+      children: <AIVideoCreator settings={settings} />,
     },
   ];
 

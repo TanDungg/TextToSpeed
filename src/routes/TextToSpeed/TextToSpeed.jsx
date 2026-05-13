@@ -140,12 +140,17 @@ const TextToSpeed = ({ settings }) => {
     setLoading(true);
     let finalUrl = null;
     try {
+      // Áp dụng độ trễ nếu có
+      if (delay > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delay * 1000));
+      }
+
       if (isSystemVoice) {
         setIsSystemVoiceMode(true);
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.voice = selectedVoice;
         utterance.rate = rate;
-        utterance.pitch = pitch + 1;
+        utterance.pitch = (pitch + 20) / 20; // Chuyển từ dải -20..20 sang 0..2 của hệ thống
         utterance.onend = () => {
           setPlaybackStatus('idle');
         };
@@ -156,7 +161,13 @@ const TextToSpeed = ({ settings }) => {
         setIsSystemVoiceMode(false);
         let audioUrl;
         if (selectedVoice.provider === 'FPT') {
-          audioUrl = await TTSProvider.speakWithFPT(text, selectedVoice.id, settings.fptKey, rate);
+          audioUrl = await TTSProvider.speakWithFPT(
+            text,
+            selectedVoice.id,
+            settings.fptKey,
+            rate,
+            pitch
+          );
         } else if (selectedVoice.provider === 'Google') {
           audioUrl = await TTSProvider.speakWithGoogleCloud(
             text,

@@ -131,6 +131,33 @@ const SettingsModal = ({ open, onCancel, settings, onSave }) => {
           style={{ marginBottom: '24px' }}
         />
 
+        <Divider orientation="left">
+          <Space>
+            <KeyOutlined /> Cấu hình Google Gemini (Miễn phí)
+          </Space>
+        </Divider>
+
+        <Form.Item label="Gemini API Key" name="geminiKey">
+          <Input.Password placeholder="Nhập Gemini API Key..." />
+        </Form.Item>
+        <Alert
+          message={
+            <div style={{ fontSize: '12px' }}>
+              <Text strong>Cách lấy Key Gemini (Free):</Text>
+              <br />
+              1. Truy cập{' '}
+              <Link href="https://aistudio.google.com/app/apikey" target="_blank">
+                Google AI Studio <LinkOutlined />
+              </Link>
+              .<br />
+              2. Tạo <Text code>API Key</Text> và sử dụng miễn phí (giới hạn 15 req/phút).
+            </div>
+          }
+          type="info"
+          showIcon
+          style={{ marginBottom: '24px' }}
+        />
+
         <div
           style={{
             background: 'rgba(250, 173, 20, 0.05)',
