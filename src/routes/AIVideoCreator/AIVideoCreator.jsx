@@ -20,6 +20,7 @@ import {
   Download,
   Sparkles,
   ArrowRight,
+  MonitorPlay,
 } from 'lucide-react';
 import axios from 'axios';
 import TTSProvider from '../../_service/TTSProvider';
@@ -35,19 +36,39 @@ const AIVideoCreator = ({ settings }) => {
   const [script, setScript] = useState(null);
   const [scenes, setScenes] = useState([]);
   const [videoGenerated, setVideoGenerated] = useState(false);
-  const [aiModel, setAiModel] = useState('openai');
+  const [aiModel, setAiModel] = useState('gemini');
+
+  // Chế độ Demo để test quy trình không cần API Key
+  const handleDemoMode = () => {
+    message.loading('Đang nạp kịch bản mẫu...', 1);
+    setTimeout(() => {
+      const demoData = {
+        title: 'Bí quyết sống hạnh phúc mỗi ngày',
+        script: 'Hạnh phúc không phải là đích đến, mà là một hành trình. Hãy bắt đầu ngày mới bằng sự biết ơn và nụ cười.',
+        scenes: [
+          { text: 'Bắt đầu ngày mới với một tách cà phê và ánh nắng ban mai.', imagePrompt: 'Cảnh bình minh rực rỡ, tách cà phê bốc khói trên bàn gỗ' },
+          { text: 'Dành thời gian chăm sóc bản thân và những người thân yêu.', imagePrompt: 'Gia đình hạnh phúc đang cười đùa trong công viên xanh mát' },
+          { text: 'Hãy luôn mỉm cười với những thử thách trong cuộc sống.', imagePrompt: 'Một người đang leo núi, mỉm cười khi đứng trên đỉnh cao' }
+        ]
+      };
+      setScript(demoData);
+      setScenes(demoData.scenes);
+      setCurrentStep(1);
+      message.success('Đã nạp kịch bản mẫu thành công!');
+    }, 1000);
+  };
 
   const handleGenerateScript = async () => {
     if (!topic.trim()) return message.warning('Hãy nhập chủ đề video!');
-
+    
     if (aiModel === 'openai') {
-      if (!settings.openaiKey)
-        return message.error('Vui lòng cấu hình OpenAI API Key trong cài đặt!');
+      if (!settings.openaiKey) return message.error('Vui lòng cấu hình OpenAI API Key!');
       return handleGenerateWithOpenAI();
     } else {
-      if (!settings.geminiKey)
-        return message.error('Vui lòng cấu hình Gemini API Key (Miễn phí) trong cài đặt!');
-      return handleGenerateWithGemini();
+      // Ưu tiên Gemini Key, nếu không có dùng Google Cloud Key
+      const apiKey = settings.geminiKey || settings.googleKey;
+      if (!apiKey) return message.error('Vui lòng cấu hình Gemini Key hoặc Google Cloud Key trong cài đặt!');
+      return handleGenerateWithGemini(apiKey);
     }
   };
 
@@ -61,8 +82,7 @@ const AIVideoCreator = ({ settings }) => {
           messages: [
             {
               role: 'system',
-              content:
-                'Bạn là một chuyên gia sáng tạo nội dung video ngắn. Hãy viết kịch bản video. Trả về JSON: { "title": "...", "script": "...", "scenes": [{ "text": "...", "imagePrompt": "..." }] }',
+              content: 'Bạn là chuyên gia sáng tạo video. Hãy viết kịch bản. Trả về JSON: { "title": "...", "script": "...", "scenes": [{ "text": "...", "imagePrompt": "..." }] }',
             },
             {
               role: 'user',
@@ -82,15 +102,13 @@ const AIVideoCreator = ({ settings }) => {
       const result = JSON.parse(response.data.choices[0].message.content);
       processResult(result);
     } catch (err) {
-      message.error(
-        'Lỗi khi tạo kịch bản OpenAI: ' + (err.response?.data?.error?.message || err.message)
-      );
+      message.error('Lỗi OpenAI: ' + (err.response?.data?.error?.message || err.message));
     } finally {
       setLoading(false);
     }
   };
 
-  const handleGenerateWithGemini = async () => {
+  const handleGenerateWithGemini = async (apiKey) => {
     setLoading(true);
     try {
       const prompt = `Bạn là chuyên gia sáng tạo video ngắn. Hãy viết kịch bản chi tiết dựa trên chủ đề của người dùng. 
@@ -105,9 +123,9 @@ const AIVideoCreator = ({ settings }) => {
       }
       Chủ đề: ${topic}`;
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${settings.geminiKey}`;
-
-      // Sử dụng IPC bridge đã được định nghĩa trong preload.cjs (window.electron.ttsRequest)
+      // Sử dụng model gemini-1.5-pro cho tài khoản Pro của user
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`;
+      
       const response = await window.electron.ttsRequest(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -115,24 +133,21 @@ const AIVideoCreator = ({ settings }) => {
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
             temperature: 0.7,
-            topK: 40,
-            topP: 0.95,
             maxOutputTokens: 2048,
-          },
-        },
+          }
+        }
       });
 
       if (!response.ok) {
-        const errorDetail =
-          typeof response.error === 'object'
-            ? response.error.error?.message || JSON.stringify(response.error)
-            : response.error;
-        throw new Error(errorDetail || 'Lỗi không xác định từ Gemini');
+        const errorDetail = typeof response.error === 'object' 
+          ? (response.error.error?.message || JSON.stringify(response.error))
+          : response.error;
+        throw new Error(errorDetail || 'Lỗi không xác định từ Google');
       }
 
       let content = response.data.candidates[0].content.parts[0].text;
-
-      // Xử lý trường hợp AI trả về text kèm markdown code block ```json
+      
+      // Fix trường hợp AI trả về markdown code blocks
       if (content.includes('```json')) {
         content = content.split('```json')[1].split('```')[0].trim();
       } else if (content.includes('```')) {
@@ -142,8 +157,8 @@ const AIVideoCreator = ({ settings }) => {
       const result = JSON.parse(content);
       processResult(result);
     } catch (err) {
-      console.error('Gemini Error Details:', err);
-      message.error('Lỗi Gemini: ' + err.message);
+      console.error('Gemini Error:', err);
+      message.error('Lỗi AI: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -234,19 +249,17 @@ const AIVideoCreator = ({ settings }) => {
                 <Wand2 />
                 <span>Nhập ý tưởng hoặc chủ đề video</span>
               </div>
-
+              
               <div style={{ marginBottom: 20 }}>
-                <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
-                  Chọn trí tuệ nhân tạo (AI):
-                </Text>
+                <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>Chọn trí tuệ nhân tạo (AI):</Text>
                 <Segmented
                   block
                   size="large"
                   value={aiModel}
                   onChange={setAiModel}
                   options={[
+                    { label: 'Google Cloud (Pro)', value: 'gemini' },
                     { label: 'OpenAI (GPT-3.5)', value: 'openai' },
-                    { label: 'Google Gemini (Miễn phí)', value: 'gemini' },
                   ]}
                   className="custom-segmented"
                 />
@@ -256,11 +269,19 @@ const AIVideoCreator = ({ settings }) => {
                 rows={6}
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
-                placeholder="Ví dụ: 3 lời khuyên để sống hạnh phúc mỗi ngày..."
+                placeholder="Ví dụ: Top 5 món ăn đường phố Hà Nội..."
                 className="custom-textarea"
               />
             </div>
             <div className="action-footer">
+              <Button
+                size="large"
+                onClick={handleDemoMode}
+                icon={<MonitorPlay size={18} />}
+                style={{ borderRadius: 12 }}
+              >
+                Dùng thử kịch bản mẫu
+              </Button>
               <Button
                 type="primary"
                 size="large"
@@ -282,9 +303,7 @@ const AIVideoCreator = ({ settings }) => {
               <span>Xem trước kịch bản</span>
             </div>
             <div className="script-preview-box">
-              <Title level={4} className="script-title">
-                {script.title}
-              </Title>
+              <Title level={4} className="script-title">{script.title}</Title>
               <Paragraph className="full-script">{script.script}</Paragraph>
               <Divider />
               <div className="scenes-list">
@@ -353,16 +372,11 @@ const AIVideoCreator = ({ settings }) => {
                   <Text type="secondary">Toàn bộ quy trình tự động hóa đã hoàn thành.</Text>
                 </div>
                 <div className="action-footer">
-                  <Button
-                    size="large"
-                    onClick={() => {
-                      setVideoGenerated(false);
-                      setCurrentStep(0);
-                      setTopic('');
-                    }}
-                  >
-                    Tạo video mới
-                  </Button>
+                  <Button size="large" onClick={() => {
+                    setVideoGenerated(false);
+                    setCurrentStep(0);
+                    setTopic('');
+                  }}>Tạo video mới</Button>
                   <Button
                     type="primary"
                     size="large"
