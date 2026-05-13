@@ -46,27 +46,42 @@ class TTSProvider {
 
     try {
       const targetUrl = `https://api.fpt.ai/hmi/tts/v5?v=${voice || 'banmai'}&t=${Date.now()}`;
-      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+      let data;
 
-      const response = await fetch(proxyUrl, {
-        method: 'POST',
-        headers: {
-          api_key: apiKey,
-          voice: voice || 'banmai',
-          speed: String(speed),
-          format: 'mp3',
-        },
-        body: cleanText,
-      });
+      if (window.electron && window.electron.ttsRequest) {
+        const result = await window.electron.ttsRequest(targetUrl, {
+          method: 'POST',
+          headers: {
+            api_key: apiKey,
+            voice: voice || 'banmai',
+            speed: String(speed),
+            format: 'mp3',
+          },
+          body: cleanText,
+        });
+        if (!result.ok) throw new Error(result.error || 'FPT.AI API failed');
+        data = result.data;
+      } else {
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+        const response = await fetch(proxyUrl, {
+          method: 'POST',
+          headers: {
+            api_key: apiKey,
+            voice: voice || 'banmai',
+            speed: String(speed),
+            format: 'mp3',
+          },
+          body: cleanText,
+        });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`FPT.AI Error: ${response.status} - ${errorText}`);
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`FPT.AI Error: ${response.status} - ${errorText}`);
+        }
+        data = await response.json();
       }
 
-      const data = await response.json();
       if (data.error) throw new Error(data.message || 'Lỗi từ FPT.AI');
-
       const audioUrl = data.async;
 
       // Chờ một chút để FPT.AI khởi tạo file (Polling cơ bản)
@@ -86,12 +101,18 @@ class TTSProvider {
     const cleanText = text.replace(/[\n\r]+/g, ' ').trim();
     try {
       const targetUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(cleanText)}&tl=${lang}&client=tw-ob`;
-      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
-
-      const response = await fetch(proxyUrl);
-      if (!response.ok) throw new Error('Không thể tải âm thanh từ Google');
-
-      return await response.blob();
+      
+      if (window.electron && window.electron.ttsRequest) {
+        const result = await window.electron.ttsRequest(targetUrl);
+        if (!result.ok) throw new Error(result.error || 'Google TTS failed');
+        // Node buffer trả về từ main được chuyển thành Uint8Array/Blob
+        return new Blob([result.data], { type: 'audio/mpeg' });
+      } else {
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+        const response = await fetch(proxyUrl);
+        if (!response.ok) throw new Error('Không thể tải âm thanh từ Google');
+        return await response.blob();
+      }
     } catch (error) {
       console.error('Google TTS Fetch Error:', error);
       throw error;
@@ -108,21 +129,33 @@ class TTSProvider {
     const langCode = voiceName.substring(0, 5);
 
     try {
-      const response = await axios.post(
-        `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
-        {
-          input: { text: text },
-          voice: { languageCode: langCode, name: voiceName },
-          audioConfig: { 
-            audioEncoding: 'MP3',
-            pitch: pitch, // Google Cloud pitch từ -20.0 đến 20.0
-            speakingRate: speakingRate // từ 0.25 đến 4.0
-          },
-        }
-      );
+      const url = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`;
+      const payload = {
+        input: { text: text },
+        voice: { languageCode: langCode, name: voiceName },
+        audioConfig: { 
+          audioEncoding: 'MP3',
+          pitch: pitch,
+          speakingRate: speakingRate
+        },
+      };
+
+      let data;
+      if (window.electron && window.electron.ttsRequest) {
+        const result = await window.electron.ttsRequest(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!result.ok) throw new Error(result.error || 'Google Cloud API failed');
+        data = result.data;
+      } else {
+        const response = await axios.post(url, payload);
+        data = response.data;
+      }
 
       // Trả về base64 audioContent chuyển thành Blob
-      const audioContent = response.data.audioContent;
+      const audioContent = data.audioContent;
       const byteCharacters = atob(audioContent);
       const byteNumbers = new Array(byteCharacters.length);
       for (let i = 0; i < byteCharacters.length; i++) {

@@ -1,5 +1,10 @@
-import { Modal, Button, Popconfirm, Empty } from 'antd';
-import { HistoryOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Modal, Button, Popconfirm, Empty, message } from 'antd';
+import {
+  HistoryOutlined,
+  DeleteOutlined,
+  DownloadOutlined,
+  PlayCircleOutlined,
+} from '@ant-design/icons';
 import { Trash2, Clock } from 'lucide-react';
 import './HistoryModalStyles.scss';
 
@@ -41,19 +46,23 @@ const HistoryModal = ({ open, onCancel, history, onClear, onSelect }) => {
         ) : (
           <div className="history-grid">
             {history.map((item, index) => (
-              <div 
-                key={item.id || index} 
+              <div
+                key={item.id || index}
                 className="history-card-item"
                 onClick={() => onSelect(item)}
               >
                 <div className="item-header">
                   <div className="voice-info">
-                    <span className="voice-name">{item.voiceName || item.voice || 'Giọng mặc định'}</span>
+                    <span className="voice-name">
+                      {item.voiceName || item.voice || 'Giọng mặc định'}
+                    </span>
                     <span className="provider-badge">{item.provider || 'FPT'}</span>
                   </div>
                   <div className="time-info">
                     <Clock size={12} />
-                    <span>{new Date(item.timestamp || item.date || item.id).toLocaleDateString()}</span>
+                    <span>
+                      {new Date(item.timestamp || item.date || item.id).toLocaleDateString()}
+                    </span>
                   </div>
                 </div>
                 <div className="item-body">
@@ -64,9 +73,65 @@ const HistoryModal = ({ open, onCancel, history, onClear, onSelect }) => {
                     <span>Tốc độ: {item.rate || item.speed || 1}x</span>
                     <span>Cao độ: {item.pitch ?? 0}</span>
                   </div>
-                  <Button type="link" size="small" className="reuse-btn">
-                    Sử dụng lại
-                  </Button>
+                  {item.provider !== 'System' && (
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      {item.audioUrl && (
+                        <Button
+                          size="small"
+                          icon={<PlayCircleOutlined />}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const audio = new Audio(item.audioUrl);
+                            audio.play().catch((err) => {
+                              console.error('Playback error:', err);
+                              message.error('Không thể phát lại bản ghi này (có thể đã hết hạn)');
+                            });
+                          }}
+                        >
+                          Phát lại
+                        </Button>
+                      )}
+                      <Button
+                        type="primary"
+                        size="small"
+                        icon={<DownloadOutlined />}
+                        className="download-history-btn"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!item.audioUrl)
+                            return message.warning('Bản ghi này không có file âm thanh!');
+
+                          const hide = message.loading('Đang chuẩn bị file tải về...', 0);
+                          try {
+                            if (window.electron && window.electron.downloadFile) {
+                              window.electron.downloadFile(
+                                item.audioUrl,
+                                `voice-${item.id}.mp3`
+                              );
+                              message.success('Đã bắt đầu tải xuống (Native)...');
+                            } else {
+                              // Fallback nếu không phải môi trường Electron
+                              const link = document.createElement('a');
+                              link.href = item.audioUrl;
+                              link.download = `voice-${item.id}.mp3`;
+                              link.target = '_blank';
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+                            }
+                          } catch (err) {
+                            console.error('Download error:', err);
+                            window.open(item.audioUrl, '_blank');
+                            message.info('Đang mở file trong tab mới để tải về.');
+                          } finally {
+                            hide();
+                          }
+                        }}
+                      >
+                        Tải Voice
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

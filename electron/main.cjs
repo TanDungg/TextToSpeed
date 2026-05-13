@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, globalShortcut } = require('electron');
 const path = require('path');
 const { exec } = require('child_process');
+const axios = require('axios');
 
 const isDev = !app.isPackaged;
 let mainWindow;
@@ -94,6 +95,44 @@ ipcMain.on('start-autoclick', (event, config) => {
 
 ipcMain.on('stop-autoclick', () => {
   stopClicking();
+});
+
+ipcMain.handle('tts-request', async (event, { url, options = {} }) => {
+  try {
+    const config = {
+      method: options.method || 'GET',
+      url: url,
+      headers: options.headers || {},
+      data: options.body,
+      responseType: options.method === 'POST' ? 'json' : 'arraybuffer'
+    };
+
+    // Đặc biệt cho FPT.AI hoặc Google Cloud có thể cần JSON
+    if (options.headers?.['Content-Type'] === 'application/json' || options.headers?.['content-type'] === 'application/json') {
+      config.responseType = 'json';
+    }
+
+    const response = await axios(config);
+    
+    return { 
+      ok: true, 
+      data: response.data, 
+      status: response.status,
+      isBinary: config.responseType === 'arraybuffer'
+    };
+  } catch (error) {
+    console.error('Main TTS Request Error:', error.message);
+    return { 
+      ok: false, 
+      error: error.response?.data || error.message 
+    };
+  }
+});
+
+ipcMain.on('download-file', (event, { url, filename }) => {
+  if (mainWindow) {
+    mainWindow.webContents.downloadURL(url);
+  }
 });
 
 app.on('will-quit', () => {

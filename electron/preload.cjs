@@ -8,6 +8,12 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.send(channel, data);
     }
   },
+  downloadFile: (url, filename) => {
+    ipcRenderer.send('download-file', { url, filename });
+  },
+  ttsRequest: (url, options) => {
+    return ipcRenderer.invoke('tts-request', { url, options });
+  },
   on: (channel, func) => {
     // Các kênh được phép lắng nghe
     const validChannels = ['autoclick-status-changed'];
