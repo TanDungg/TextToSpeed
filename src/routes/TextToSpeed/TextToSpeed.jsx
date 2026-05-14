@@ -69,6 +69,20 @@ const AI_VOICES = [
     lang: 'en-AU',
     type: 'child',
   },
+
+  // Microsoft Edge TTS - MIỄN PHÍ & CHẤT LƯỢNG CAO (Tiếng Anh)
+  { id: 'en-US-AndrewNeural', name: 'Andrew (Nam - Edge)', provider: 'Edge', lang: 'en-US', type: 'adult' },
+  { id: 'en-US-AvaNeural', name: 'Ava (Nữ - Edge)', provider: 'Edge', lang: 'en-US', type: 'adult' },
+  { id: 'en-US-BrianNeural', name: 'Brian (Nam - Edge)', provider: 'Edge', lang: 'en-US', type: 'adult' },
+  { id: 'en-US-EmmaNeural', name: 'Emma (Nữ - Edge)', provider: 'Edge', lang: 'en-US', type: 'adult' },
+  { id: 'en-GB-SoniaNeural', name: 'Sonia (Nữ UK - Edge)', provider: 'Edge', lang: 'en-GB', type: 'adult' },
+  { id: 'vi-VN-HoaiMyNeural', name: 'Hoài My (Nữ VN - Edge)', provider: 'Edge', lang: 'vi-VN', type: 'adult' },
+  { id: 'vi-VN-NamMinhNeural', name: 'Nam Minh (Nam VN - Edge)', provider: 'Edge', lang: 'vi-VN', type: 'adult' },
+
+  // OpenAI TTS - Cao cấp
+  { id: 'alloy', name: 'Alloy (Đa năng - OpenAI)', provider: 'OpenAI', lang: 'en-US', type: 'adult' },
+  { id: 'nova', name: 'Nova (Nữ - OpenAI)', provider: 'OpenAI', lang: 'en-US', type: 'adult' },
+  { id: 'onyx', name: 'Onyx (Nam trầm - OpenAI)', provider: 'OpenAI', lang: 'en-US', type: 'adult' },
 ];
 
 const TextToSpeed = ({ settings }) => {
@@ -176,8 +190,19 @@ const TextToSpeed = ({ settings }) => {
             pitch,
             rate
           );
+        } else if (selectedVoice.provider === 'Edge') {
+          audioUrl = await TTSProvider.speakWithEdge(
+            text,
+            selectedVoice.id,
+            rate
+          );
         } else {
-          audioUrl = await TTSProvider.speakWithOpenAI(text, 'alloy', settings.openaiKey, rate);
+          audioUrl = await TTSProvider.speakWithOpenAI(
+            text, 
+            selectedVoice.id === 'alloy' || selectedVoice.id === 'nova' || selectedVoice.id === 'onyx' ? selectedVoice.id : 'alloy', 
+            settings.openaiKey, 
+            rate
+          );
         }
 
         if (!audioUrl) throw new Error('Không nhận được dữ liệu âm thanh.');
@@ -311,7 +336,14 @@ const TextToSpeed = ({ settings }) => {
                     })),
                   },
                   {
-                    label: 'Giọng hệ thống (Miễn phí)',
+                    label: 'Microsoft Edge - Miễn phí (Khuyên dùng)',
+                    options: AI_VOICES.filter((v) => v.provider === 'Edge').map((v) => ({
+                      value: v.id,
+                      label: v.name,
+                    })),
+                  },
+                  {
+                    label: 'Giọng hệ thống (Offline)',
                     options: systemVoices.map((v) => ({
                       value: v.voiceURI,
                       label: `${v.name} (${v.lang})`,

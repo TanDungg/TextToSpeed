@@ -43,7 +43,7 @@ class TTSProvider {
     if (!apiKey) throw new Error('Vui lòng cấu hình API Key FPT.AI.');
 
     let cleanText = text.replace(/[\n\r]+/g, ' ').trim();
-    
+
     // Nếu có pitch, sử dụng SSML để FPT.AI hiểu được
     if (pitch !== 0) {
       const pitchPercent = pitch > 0 ? `+${pitch}%` : `${pitch}%`;
@@ -107,7 +107,7 @@ class TTSProvider {
     const cleanText = text.replace(/[\n\r]+/g, ' ').trim();
     try {
       const targetUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(cleanText)}&tl=${lang}&client=tw-ob`;
-      
+
       if (window.electron && window.electron.ttsRequest) {
         const result = await window.electron.ttsRequest(targetUrl);
         if (!result.ok) throw new Error(result.error || 'Google TTS failed');
@@ -139,10 +139,10 @@ class TTSProvider {
       const payload = {
         input: { text: text },
         voice: { languageCode: langCode, name: voiceName },
-        audioConfig: { 
+        audioConfig: {
           audioEncoding: 'MP3',
           pitch: pitch,
-          speakingRate: speakingRate
+          speakingRate: speakingRate,
         },
       };
 
@@ -173,6 +173,44 @@ class TTSProvider {
       const errorMsg = error.response?.data?.error?.message || error.message;
       throw new Error(`Google Cloud Error: ${errorMsg}`);
     }
+  }
+
+  /**
+   * Microsoft Edge TTS (Free & High Quality)
+   */
+  static async speakWithEdge(text, voice, rate = 0) {
+    const ratePercent =
+      rate >= 1 ? `+${Math.round((rate - 1) * 100)}%` : `-${Math.round((1 - rate) * 100)}%`;
+    const voiceId = voice || 'en-US-AndrewNeural';
+
+    // Thêm các server mới và ổn định hơn
+    const servers = [
+      `https://edge-tts-api.vercel.app/api/tts?text=${encodeURIComponent(text)}&voice=${voiceId}&rate=${ratePercent}`,
+      `https://ms-edge-tts.vercel.app/api/tts?text=${encodeURIComponent(text)}&voice=${voiceId}&rate=${ratePercent}`,
+      `https://edge-tts.onrender.com/tts?text=${encodeURIComponent(text)}&voice=${voiceId}&rate=${ratePercent}`,
+      `https://api.suen.me/tts?text=${encodeURIComponent(text)}&voice=${voiceId}&rate=${ratePercent}`,
+    ];
+
+    for (const url of servers) {
+      try {
+        if (window.electron && window.electron.ttsRequest) {
+          const result = await window.electron.ttsRequest(url);
+          if (result.ok && result.data) {
+            return new Blob([result.data], { type: 'audio/mpeg' });
+          }
+        } else {
+          const response = await fetch(url);
+          if (response.ok) return await response.blob();
+        }
+      } catch (err) {
+        console.warn(`Server ${url} không phản hồi, đang thử server dự phòng...`);
+      }
+    }
+
+    // DỰ PHÒNG CUỐI CÙNG: Nếu tất cả Edge hỏng, dùng Google Translate để không bị lỗi
+    console.warn('Tất cả Edge servers hỏng, đang dùng Google Translate làm dự phòng...');
+    const lang = voiceId.startsWith('vi') ? 'vi' : 'en';
+    return await this.getGoogleAudioBlob(text, lang);
   }
 
   static splitText(text, maxLength) {
