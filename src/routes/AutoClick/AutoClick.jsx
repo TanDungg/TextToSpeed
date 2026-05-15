@@ -43,23 +43,21 @@ const AutoClick = () => {
   }, []);
 
   return (
-    <div className="tts-container">
-      <Card variant="borderless" className="tts-card">
-        <div className="tts-layout">
-          <div className="tts-main-content">
-            <header className="main-header">
-              <Title level={1} className="tts-gradient-title">
-                Auto Clicker Pro
-              </Title>
-              <div className="main-status">
-                <Sparkles size={18} style={{ color: '#f59e0b' }} />
-                <span>Mô phỏng click chuột tự động</span>
-                <Divider type="vertical" />
-                <Tag color="blue" bordered={false} style={{ borderRadius: '6px', fontWeight: 600 }}>
-                  v1.0.2
-                </Tag>
-              </div>
-            </header>
+    <div className="tool-container autoclick-container">
+      <Card variant="borderless" className="tool-card">
+        <header className="tool-header">
+          <h1 className="tool-gradient-title">Auto Clicker Pro</h1>
+          <div className="tool-status-bar">
+            <Sparkles size={18} style={{ color: '#f59e0b' }} />
+            <span>Mô phỏng click chuột tự động</span>
+            <Divider type="vertical" />
+            <Tag color="blue" bordered={false} style={{ borderRadius: '6px', fontWeight: 600 }}>
+              v1.0.2
+            </Tag>
+          </div>
+        </header>
+
+        <div className="autoclick-content">
 
             <Row gutter={[32, 32]}>
               <Col xs={24} md={12}>
@@ -163,9 +161,8 @@ const AutoClick = () => {
               </div>
             </div>
           </div>
-        </div>
-      </Card>
-    </div>
+        </Card>
+      </div>
   );
 };
 

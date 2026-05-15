@@ -210,6 +210,222 @@ ipcMain.on('download-file', (event, { url, filename }) => {
   }
 });
 
+ipcMain.handle('video-download', async (event, { url }) => {
+  return new Promise((resolve) => {
+    // Thư mục lưu tạm
+    const tempDir = path.join(app.getPath('downloads'), 'SmartRemaker');
+    if (!require('fs').existsSync(tempDir)) {
+      require('fs').mkdirSync(tempDir);
+    }
+    
+    const outputPath = path.join(tempDir, `original_${Date.now()}.mp4`);
+    
+    // Ép buộc định dạng H.264 (avc1) để đảm bảo có hình và tiếng trên mọi trình phát
+    const command = `yt-dlp -f "bv[ext=mp4][vcodec^=avc1]+ba[ext=m4a]/mp4/b" --merge-output-format mp4 -o "${outputPath}" "${url}"`;
+    
+    exec(command, (error, stdout, stderr) => {
+      if (error) {
+        console.error('Download Error:', stderr);
+        const isNotFound = stderr.toLowerCase().includes('not recognized') || error.message.toLowerCase().includes('not found');
+        resolve({ 
+          ok: false, 
+          error: isNotFound ? 'Vui lòng cài đặt yt-dlp và thêm vào PATH.' : `Lỗi tải video: ${stderr || error.message}`
+        });
+      } else {
+        // Kiểm tra xem file có thực sự tồn tại không
+        if (require('fs').existsSync(outputPath)) {
+          resolve({ ok: true, path: outputPath });
+        } else {
+          // Thử tìm các file có extension khác nếu yt-dlp không convert được sang mp4
+          const files = require('fs').readdirSync(tempDir);
+          const foundFile = files.find(f => f.startsWith(path.basename(outputPath, '.mp4')));
+          if (foundFile) {
+            resolve({ ok: true, path: path.join(tempDir, foundFile) });
+          } else {
+            resolve({ ok: false, error: 'Tải thành công nhưng không tìm thấy file video. Vui lòng thử lại.' });
+          }
+        }
+      }
+    });
+  });
+});
+
+ipcMain.handle('video-remake', async (event, { inputPath, options }) => {
+  const fs = require('fs');
+  return new Promise((resolve) => {
+    const tempDir = path.join(app.getPath('downloads'), 'SmartRemaker', 'temp');
+    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+    const outputPath = inputPath.replace('original_', 'remaked_');
+    
+    // Kiểm tra xem video có audio không
+    exec(`ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 "${inputPath}"`, (err, stdout) => {
+      const hasAudio = stdout.trim() !== '';
+      
+      let filters = [];
+      if (options.flip) filters.push('hflip');
+      if (options.crop) filters.push('scale=1.1*iw:-1,crop=iw/1.1:ih/1.1');
+      if (options.grain) filters.push('noise=alls=7:allf=t+u');
+      
+      const speed = options.speed || 1.05;
+      
+      // Xây dựng chuỗi filter cho FFmpeg
+      let vFilters = filters.length > 0 ? filters : [];
+      
+      // Bỏ phần chèn phụ đề tĩnh theo yêu cầu của người dùng
+      // (Phần này đã được xóa để tránh hiển thị văn bản không khớp thời gian)
+      
+      let vFilterStr = vFilters.length > 0 ? vFilters.join(',') : 'copy';
+      if (vFilterStr !== 'copy') vFilterStr = `[0:v]${vFilterStr},setpts=PTS/${speed}[v]`;
+      else vFilterStr = `[0:v]setpts=PTS/${speed}[v]`;
+
+      let command = '';
+      // --- LOGIC AUTO-SYNC: Tính toán để Voice vừa khít Video ---
+      let voiceSpeed = speed; // Mặc định dùng tốc độ người dùng chọn
+      
+      try {
+        const { execSync } = require('child_process');
+        // Lấy thời lượng video gốc (sử dụng ffprobe)
+        const videoDurStr = execSync(`ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${inputPath}"`).toString().trim();
+        const videoDuration = parseFloat(videoDurStr);
+
+        if (options.externalAudio && fs.existsSync(options.externalAudio)) {
+          // Lấy thời lượng file Voice AI vừa tạo
+          const voiceDurStr = execSync(`ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${options.externalAudio}"`).toString().trim();
+          const voiceDuration = parseFloat(voiceDurStr);
+          
+          if (!isNaN(videoDuration) && !isNaN(voiceDuration) && videoDuration > 0) {
+            // Tính toán tốc độ Voice cần thiết để khớp với Video đã được thay đổi tốc độ
+            // Công thức: (Thời lượng Voice * Tốc độ Video mới) / Thời lượng Video gốc
+            voiceSpeed = (voiceDuration * speed) / videoDuration;
+            
+            // Giới hạn tốc độ trong khoảng an toàn 0.5x - 2.0x để tránh méo tiếng quá mức
+            voiceSpeed = Math.min(Math.max(voiceSpeed, 0.7), 1.9);
+            console.log(`Auto-Sync: Video ${videoDuration}s, Voice ${voiceDuration}s => New Voice Speed: ${voiceSpeed.toFixed(2)}x`);
+          }
+        }
+      } catch (syncErr) {
+        console.warn('Auto-Sync failed, using default speed:', syncErr.message);
+      }
+      // ---------------------------------------------------------
+
+      const vFilterStrFinal = vFilterStr !== 'copy' ? vFilterStr : '[0:v]copy[v]';
+      
+      const relInput = path.join('..', path.basename(inputPath));
+      const relOutput = path.join('..', path.basename(outputPath));
+      const relExternalAudio = options.externalAudio ? path.basename(options.externalAudio) : null;
+
+      if (relExternalAudio && fs.existsSync(options.externalAudio)) {
+        // Áp dụng voiceSpeed đã tính toán cho giọng đọc [1:a]
+        command = `ffmpeg -i "${relInput}" -i "${relExternalAudio}" -filter_complex "${vFilterStrFinal};[1:a]atempo=${voiceSpeed}[new_a];[0:a]volume=0.2[bg_a];[bg_a][new_a]amix=inputs=2:duration=first[a]" -map "[v]" -map "[a]" -c:v libx264 -preset superfast -y "${relOutput}"`;
+      } else if (hasAudio) {
+        const aFilter = `[0:a]atempo=${speed}[a]`;
+        command = `ffmpeg -i "${relInput}" -filter_complex "${vFilterStrFinal};${aFilter}" -map "[v]" -map "[a]" -c:v libx264 -preset superfast -y "${relOutput}"`;
+      } else {
+        command = `ffmpeg -i "${relInput}" -filter_complex "${vFilterStrFinal}" -map "[v]" -c:v libx264 -preset superfast -y "${relOutput}"`;
+      }
+      
+      // Chạy lệnh với cwd là tempDir để FFmpeg tự tìm thấy các file tương đối
+      exec(command, { cwd: tempDir }, (error, stdout, stderr) => {
+        if (error) {
+          console.error('Remake Error:', stderr);
+          // Kiểm tra nếu lỗi là do không tìm thấy lệnh
+          const isNotFound = stderr.toLowerCase().includes('not recognized') || error.message.toLowerCase().includes('not found') || error.code === 127;
+          
+          let errorMsg = 'Vui lòng cài đặt FFmpeg để sử dụng tính năng này.';
+          if (!isNotFound) {
+            errorMsg = `Lỗi FFmpeg: ${stderr || error.message}`;
+          }
+          
+          resolve({ ok: false, error: errorMsg });
+        } else {
+          resolve({ ok: true, path: outputPath });
+        }
+      });
+    });
+  });
+});
+
+ipcMain.handle('save-temp-audio', async (event, { buffer, ext = 'mp3' }) => {
+  const tempDir = path.join(app.getPath('downloads'), 'SmartRemaker', 'temp');
+  if (!require('fs').existsSync(tempDir)) {
+    require('fs').mkdirSync(tempDir, { recursive: true });
+  }
+  const audioPath = path.join(tempDir, `temp_${Date.now()}.${ext}`);
+  require('fs').writeFileSync(audioPath, Buffer.from(buffer));
+  return audioPath;
+});
+
+ipcMain.handle('extract-audio', async (event, { videoPath }) => {
+  const audioPath = videoPath.replace(/\.[^/.]+$/, "") + "_audio.mp3";
+  return new Promise((resolve) => {
+    exec(`ffmpeg -i "${videoPath}" -q:a 0 -map a -y "${audioPath}"`, (error) => {
+      if (error) resolve({ ok: false, error: error.message });
+      else resolve({ ok: true, path: audioPath });
+    });
+  });
+});
+
+ipcMain.handle('transcribe-audio', async (event, { audioPath, apiKey }) => {
+  try {
+    const fs = require('fs');
+    const FormData = require('form-data');
+    
+    const form = new FormData();
+    form.append('file', fs.createReadStream(audioPath));
+    form.append('model', 'whisper-1');
+
+    const response = await axios.post('https://api.openai.com/v1/audio/transcriptions', form, {
+      headers: {
+        ...form.getHeaders(),
+        Authorization: `Bearer ${apiKey}`,
+      },
+    });
+
+    return { ok: true, text: response.data.text };
+  } catch (error) {
+    console.error('Whisper Error:', error.response?.data || error.message);
+    return { ok: false, error: error.response?.data?.error?.message || error.message };
+  }
+});
+
+ipcMain.handle('read-file-base64', async (event, { filePath }) => {
+  try {
+    const fs = require('fs');
+    const buffer = fs.readFileSync(filePath);
+    return { ok: true, data: buffer.toString('base64') };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle('list-gemini-models', async (event, { apiKey }) => {
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1/models?key=${apiKey}`;
+    const response = await axios.get(url);
+    return { ok: true, models: response.data.models };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+// Thêm endpoint kiểm tra môi trường
+ipcMain.handle('check-env', async () => {
+  const checkFfmpeg = () => new Promise(resolve => {
+    exec('ffmpeg -version', (error) => resolve(!error));
+  });
+  const checkYtdlp = () => new Promise(resolve => {
+    exec('yt-dlp --version', (error) => resolve(!error));
+  });
+
+  const hasFfmpeg = await checkFfmpeg();
+  const hasYtdlp = await checkYtdlp();
+
+  return {
+    ffmpeg: hasFfmpeg,
+    ytdlp: hasYtdlp
+  };
+});
+
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
 });

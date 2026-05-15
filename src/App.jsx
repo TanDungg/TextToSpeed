@@ -3,8 +3,9 @@ import { Tabs, Button } from 'antd';
 import TextToSpeed from './routes/TextToSpeed/TextToSpeed';
 import AutoClick from './routes/AutoClick/AutoClick';
 import AIVideoCreator from './routes/AIVideoCreator/AIVideoCreator';
+import VideoRemaker from './routes/VideoRemaker/VideoRemaker';
 import SettingsModal from './components/Setting/SettingsModal';
-import { SoundOutlined, SettingOutlined, ThunderboltOutlined, VideoCameraOutlined } from '@ant-design/icons';
+import { SoundOutlined, SettingOutlined, ThunderboltOutlined, VideoCameraOutlined, PlayCircleOutlined } from '@ant-design/icons';
 
 const App = () => {
   const [showSettings, setShowSettings] = useState(false);
@@ -51,6 +52,15 @@ const App = () => {
         </span>
       ),
       children: <AIVideoCreator settings={settings} />,
+    },
+    {
+      key: '4',
+      label: (
+        <span>
+          <PlayCircleOutlined /> Video Remaker
+        </span>
+      ),
+      children: <VideoRemaker settings={settings} />,
     },
   ];
 

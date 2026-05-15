@@ -10,6 +10,7 @@ import {
   Col,
   Divider,
   Segmented,
+  Tag,
 } from 'antd';
 import {
   Wand2,
@@ -219,19 +220,20 @@ const AIVideoCreator = ({ settings }) => {
   };
 
   return (
-    <div className="ai-video-creator-container">
-      <div className="creator-header">
-        <div className="title-row">
-          <h1 className="main-title">AI Video Automator</h1>
-        </div>
-        <div className="subtitle-row">
-          <Sparkles className="sparkle-icon" />
-          <span className="subtitle-text">Trình tạo video AI chuyên nghiệp</span>
-          <span className="version-tag">v1.0.0</span>
-        </div>
-      </div>
+    <div className="tool-container ai-video-creator-container">
+      <Card variant="borderless" className="tool-card">
+        <header className="tool-header">
+          <h1 className="tool-gradient-title">AI Video Automator</h1>
+          <div className="tool-status-bar">
+            <Sparkles size={18} style={{ color: '#f59e0b' }} />
+            <span>Trình tạo video AI chuyên nghiệp</span>
+            <Divider type="vertical" />
+            <Tag color="blue" bordered={false} style={{ borderRadius: '6px', fontWeight: 600 }}>
+              v1.0.0
+            </Tag>
+          </div>
+        </header>
 
-      <Card className="main-creator-card">
         <Steps
           current={currentStep}
           items={[
@@ -249,9 +251,11 @@ const AIVideoCreator = ({ settings }) => {
                 <Wand2 />
                 <span>Nhập ý tưởng hoặc chủ đề video</span>
               </div>
-              
+
               <div style={{ marginBottom: 20 }}>
-                <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>Chọn trí tuệ nhân tạo (AI):</Text>
+                <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
+                  Chọn trí tuệ nhân tạo (AI):
+                </Text>
                 <Segmented
                   block
                   size="large"
@@ -303,7 +307,9 @@ const AIVideoCreator = ({ settings }) => {
               <span>Xem trước kịch bản</span>
             </div>
             <div className="script-preview-box">
-              <Title level={4} className="script-title">{script.title}</Title>
+              <Title level={4} className="script-title">
+                {script.title}
+              </Title>
               <Paragraph className="full-script">{script.script}</Paragraph>
               <Divider />
               <div className="scenes-list">
@@ -372,11 +378,16 @@ const AIVideoCreator = ({ settings }) => {
                   <Text type="secondary">Toàn bộ quy trình tự động hóa đã hoàn thành.</Text>
                 </div>
                 <div className="action-footer">
-                  <Button size="large" onClick={() => {
-                    setVideoGenerated(false);
-                    setCurrentStep(0);
-                    setTopic('');
-                  }}>Tạo video mới</Button>
+                  <Button
+                    size="large"
+                    onClick={() => {
+                      setVideoGenerated(false);
+                      setCurrentStep(0);
+                      setTopic('');
+                    }}
+                  >
+                    Tạo video mới
+                  </Button>
                   <Button
                     type="primary"
                     size="large"

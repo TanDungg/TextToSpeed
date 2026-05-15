@@ -90,10 +90,26 @@ class TTSProvider {
       if (data.error) throw new Error(data.message || 'Lỗi từ FPT.AI');
       const audioUrl = data.async;
 
-      // Chờ một chút để FPT.AI khởi tạo file (Polling cơ bản)
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Cơ chế Polling: Thử tải file tối đa 10 lần, mỗi lần cách nhau 1.5s
+      for (let i = 0; i < 10; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        
+        try {
+          if (window.electron && window.electron.ttsRequest) {
+            const audioRes = await window.electron.ttsRequest(audioUrl);
+            if (audioRes.ok && audioRes.data) {
+              return new Blob([audioRes.data], { type: 'audio/mpeg' });
+            }
+          } else {
+            const audioResponse = await fetch(audioUrl);
+            if (audioResponse.ok) return await audioResponse.blob();
+          }
+        } catch (err) {
+          console.warn(`Lần thử ${i+1}: File FPT chưa sẵn sàng...`);
+        }
+      }
 
-      return audioUrl;
+      throw new Error('FPT.AI xử lý quá lâu hoặc gặp lỗi. Vui lòng thử lại.');
     } catch (error) {
       console.error('FPT.AI TTS Error:', error);
       throw new Error(error.message);
@@ -104,21 +120,27 @@ class TTSProvider {
    * Google Translate TTS (Tải qua Proxy để tránh lỗi)
    */
   static async getGoogleAudioBlob(text, lang = 'vi') {
-    const cleanText = text.replace(/[\n\r]+/g, ' ').trim();
+    const chunks = this.splitText(text, 180);
+    const blobs = [];
+    
     try {
-      const targetUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(cleanText)}&tl=${lang}&client=tw-ob`;
+      for (const chunk of chunks) {
+        const cleanText = chunk.replace(/[\n\r]+/g, ' ').trim();
+        const targetUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(cleanText)}&tl=${lang}&client=tw-ob`;
 
-      if (window.electron && window.electron.ttsRequest) {
-        const result = await window.electron.ttsRequest(targetUrl);
-        if (!result.ok) throw new Error(result.error || 'Google TTS failed');
-        // Node buffer trả về từ main được chuyển thành Uint8Array/Blob
-        return new Blob([result.data], { type: 'audio/mpeg' });
-      } else {
-        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
-        const response = await fetch(proxyUrl);
-        if (!response.ok) throw new Error('Không thể tải âm thanh từ Google');
-        return await response.blob();
+        if (window.electron && window.electron.ttsRequest) {
+          const result = await window.electron.ttsRequest(targetUrl);
+          if (!result.ok) throw new Error(result.error || 'Google TTS failed');
+          blobs.push(new Blob([result.data], { type: 'audio/mpeg' }));
+        } else {
+          const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+          const response = await fetch(proxyUrl);
+          if (!response.ok) throw new Error('Không thể tải âm thanh từ Google');
+          const blob = await response.blob();
+          blobs.push(blob);
+        }
       }
+      return new Blob(blobs, { type: 'audio/mpeg' });
     } catch (error) {
       console.error('Google TTS Fetch Error:', error);
       throw error;
@@ -211,6 +233,47 @@ class TTSProvider {
     console.warn('Tất cả Edge servers hỏng, đang dùng Google Translate làm dự phòng...');
     const lang = voiceId.startsWith('vi') ? 'vi' : 'en';
     return await this.getGoogleAudioBlob(text, lang);
+  }
+
+  /**
+   * ElevenLabs TTS (Premium Emotional Voices)
+   */
+  static async speakWithElevenLabs(text, voiceId, apiKey) {
+    if (!apiKey) throw new Error('Vui lòng cấu hình ElevenLabs API Key.');
+    const id = voiceId || '21m00Tcm4TlvDq8ikWAM'; // Mặc định giọng Rachel
+
+    try {
+      const url = `https://api.elevenlabs.io/v1/text-to-speech/${id}`;
+      
+      if (window.electron && window.electron.ttsRequest) {
+        const result = await window.electron.ttsRequest(url, {
+          method: 'POST',
+          headers: {
+            'xi-api-key': apiKey,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            text: text,
+            model_id: 'eleven_multilingual_v2',
+            voice_settings: { stability: 0.5, similarity_boost: 0.5 }
+          }),
+        });
+        if (!result.ok) throw new Error(result.error || 'ElevenLabs API failed');
+        return new Blob([result.data], { type: 'audio/mpeg' });
+      } else {
+        const response = await axios.post(url, {
+          text: text,
+          model_id: 'eleven_multilingual_v2',
+        }, {
+          headers: { 'xi-api-key': apiKey },
+          responseType: 'blob'
+        });
+        return response.data;
+      }
+    } catch (error) {
+      const errorMsg = error.response?.data?.error?.message || error.message;
+      throw new Error(`ElevenLabs Error: ${errorMsg}`);
+    }
   }
 
   static splitText(text, maxLength) {

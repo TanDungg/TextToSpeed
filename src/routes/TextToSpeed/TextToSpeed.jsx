@@ -118,7 +118,6 @@ const TextToSpeed = ({ settings }) => {
   const handleSpeak = async () => {
     if (!text.trim()) return message.warning('Vui lòng nhập văn bản!');
 
-    // Nếu đang phát thì tạm dừng
     if (playbackStatus === 'playing') {
       if (isSystemVoiceMode) {
         window.speechSynthesis.pause();
@@ -129,7 +128,6 @@ const TextToSpeed = ({ settings }) => {
       return;
     }
 
-    // Nếu đang tạm dừng thì tiếp tục
     if (playbackStatus === 'paused') {
       if (isSystemVoiceMode) {
         window.speechSynthesis.resume();
@@ -140,7 +138,6 @@ const TextToSpeed = ({ settings }) => {
       return;
     }
 
-    // Nếu đang idle thì bắt đầu mới
     let selectedVoice = AI_VOICES.find((v) => v.id === selectedVoiceId);
     let isSystemVoice = false;
 
@@ -154,7 +151,6 @@ const TextToSpeed = ({ settings }) => {
     setLoading(true);
     let finalUrl = null;
     try {
-      // Áp dụng độ trễ nếu có
       if (delay > 0) {
         await new Promise((resolve) => setTimeout(resolve, delay * 1000));
       }
@@ -164,11 +160,9 @@ const TextToSpeed = ({ settings }) => {
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.voice = selectedVoice;
         utterance.rate = rate;
-        utterance.pitch = (pitch + 20) / 20; // Chuyển từ dải -20..20 sang 0..2 của hệ thống
-        utterance.onend = () => {
-          setPlaybackStatus('idle');
-        };
-        window.speechSynthesis.cancel(); // Dừng cái cũ nếu có
+        utterance.pitch = (pitch + 20) / 20;
+        utterance.onend = () => setPlaybackStatus('idle');
+        window.speechSynthesis.cancel();
         window.speechSynthesis.speak(utterance);
         setPlaybackStatus('playing');
       } else {
@@ -191,16 +185,12 @@ const TextToSpeed = ({ settings }) => {
             rate
           );
         } else if (selectedVoice.provider === 'Edge') {
-          audioUrl = await TTSProvider.speakWithEdge(
-            text,
-            selectedVoice.id,
-            rate
-          );
+          audioUrl = await TTSProvider.speakWithEdge(text, selectedVoice.id, rate);
         } else {
           audioUrl = await TTSProvider.speakWithOpenAI(
-            text, 
-            selectedVoice.id === 'alloy' || selectedVoice.id === 'nova' || selectedVoice.id === 'onyx' ? selectedVoice.id : 'alloy', 
-            settings.openaiKey, 
+            text,
+            selectedVoice.id,
+            settings.openaiKey,
             rate
           );
         }
@@ -208,11 +198,7 @@ const TextToSpeed = ({ settings }) => {
         if (!audioUrl) throw new Error('Không nhận được dữ liệu âm thanh.');
         finalUrl = typeof audioUrl === 'string' ? audioUrl : URL.createObjectURL(audioUrl);
         const audio = new Audio(finalUrl);
-
-        audio.onended = () => {
-          setPlaybackStatus('idle');
-        };
-
+        audio.onended = () => setPlaybackStatus('idle');
         setCurrentAudio(audio);
         setCurrentUrl(finalUrl);
         await audio.play();
@@ -230,10 +216,8 @@ const TextToSpeed = ({ settings }) => {
         pitch,
         audioUrl: isSystemVoice ? null : finalUrl,
       };
-
       setHistory([newHistoryItem, ...history]);
     } catch (err) {
-      console.error('TTS Error:', err);
       message.error('Lỗi: ' + err.message);
       setPlaybackStatus('idle');
     } finally {
@@ -242,9 +226,8 @@ const TextToSpeed = ({ settings }) => {
   };
 
   const handleStop = () => {
-    if (isSystemVoiceMode) {
-      window.speechSynthesis.cancel();
-    } else if (currentAudio) {
+    if (isSystemVoiceMode) window.speechSynthesis.cancel();
+    else if (currentAudio) {
       currentAudio.pause();
       currentAudio.currentTime = 0;
     }
@@ -253,46 +236,35 @@ const TextToSpeed = ({ settings }) => {
 
   const handleDownload = () => {
     if (!currentUrl) return message.warning('Chưa có âm thanh để tải!');
-
-    try {
-      if (window.electron && window.electron.downloadFile) {
-        window.electron.downloadFile(currentUrl, `tts-voice-${Date.now()}.mp3`);
-        message.success('Đã bắt đầu tải xuống...');
-      } else {
-        // Fallback cho trình duyệt
-        const link = document.createElement('a');
-        link.href = currentUrl;
-        link.download = `tts-voice-${Date.now()}.mp3`;
-        link.target = '_blank';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      }
-    } catch (err) {
-      console.error('Download Error:', err);
-      window.open(currentUrl, '_blank');
+    if (window.electron && window.electron.downloadFile) {
+      window.electron.downloadFile(currentUrl, `tts-voice-${Date.now()}.mp3`);
+    } else {
+      const link = document.createElement('a');
+      link.href = currentUrl;
+      link.download = `tts-voice-${Date.now()}.mp3`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     }
   };
 
   return (
-    <div className="tts-container">
-      <Card variant="borderless" className="tts-card">
+    <div className="tool-container tts-container">
+      <Card variant="borderless" className="tool-card">
+        <header className="tool-header">
+          <h1 className="tool-gradient-title">AI Voice Master</h1>
+          <div className="tool-status-bar">
+            <Sparkles size={18} style={{ color: '#f59e0b' }} />
+            <span>Trình tạo giọng nói AI cao cấp</span>
+            <Divider type="vertical" />
+            <Tag color="blue" bordered={false} style={{ borderRadius: '6px', fontWeight: 600 }}>
+              v1.2.0
+            </Tag>
+          </div>
+        </header>
+
         <div className="tts-layout">
           <div className="tts-main-content">
-            <header className="main-header">
-              <Title level={1} className="tts-gradient-title">
-                AI Voice Master
-              </Title>
-              <div className="main-status">
-                <Sparkles size={18} style={{ color: '#f59e0b' }} />
-                <span>Trình tạo giọng nói AI cao cấp</span>
-                <Divider type="vertical" />
-                <Tag color="blue" bordered={false} style={{ borderRadius: '6px', fontWeight: 600 }}>
-                  v1.2.0
-                </Tag>
-              </div>
-            </header>
-
             <div className="input-section">
               <div className="input-header">
                 <span className="slider-icon-text">
@@ -319,35 +291,31 @@ const TextToSpeed = ({ settings }) => {
                 placeholder="Chọn một giọng nói..."
                 value={selectedVoiceId}
                 onChange={setSelectedVoiceId}
-                optionFilterProp="label"
                 options={[
                   {
-                    label: 'FPT.AI - Giọng Việt Nam',
+                    label: 'FPT.AI',
                     options: AI_VOICES.filter((v) => v.provider === 'FPT').map((v) => ({
                       value: v.id,
                       label: v.name,
                     })),
                   },
                   {
-                    label: 'Google Cloud - Cao cấp',
+                    label: 'Google Cloud',
                     options: AI_VOICES.filter((v) => v.provider === 'Google').map((v) => ({
                       value: v.id,
                       label: v.name,
                     })),
                   },
                   {
-                    label: 'Microsoft Edge - Miễn phí (Khuyên dùng)',
+                    label: 'Microsoft Edge',
                     options: AI_VOICES.filter((v) => v.provider === 'Edge').map((v) => ({
                       value: v.id,
                       label: v.name,
                     })),
                   },
                   {
-                    label: 'Giọng hệ thống (Offline)',
-                    options: systemVoices.map((v) => ({
-                      value: v.voiceURI,
-                      label: `${v.name} (${v.lang})`,
-                    })),
+                    label: 'Hệ thống',
+                    options: systemVoices.map((v) => ({ value: v.voiceURI, label: v.name })),
                   },
                 ]}
               />
@@ -361,16 +329,8 @@ const TextToSpeed = ({ settings }) => {
                   </span>
                   <span className="slider-value">x{rate}</span>
                 </div>
-                <Slider
-                  min={0.5}
-                  max={2.0}
-                  step={0.1}
-                  value={rate}
-                  onChange={setRate}
-                  tooltip={{ open: false }}
-                />
+                <Slider min={0.5} max={2.0} step={0.1} value={rate} onChange={setRate} />
               </div>
-
               <div className="slider-item">
                 <div className="slider-label">
                   <span className="slider-icon-text">
@@ -378,16 +338,8 @@ const TextToSpeed = ({ settings }) => {
                   </span>
                   <span className="slider-value">{pitch}</span>
                 </div>
-                <Slider
-                  min={-20}
-                  max={20}
-                  step={1}
-                  value={pitch}
-                  onChange={setPitch}
-                  tooltip={{ open: false }}
-                />
+                <Slider min={-20} max={20} step={1} value={pitch} onChange={setPitch} />
               </div>
-
               <div className="slider-item">
                 <div className="slider-label">
                   <span className="slider-icon-text">
@@ -395,14 +347,7 @@ const TextToSpeed = ({ settings }) => {
                   </span>
                   <span className="slider-value">{delay}s</span>
                 </div>
-                <Slider
-                  min={0}
-                  max={5}
-                  step={0.5}
-                  value={delay}
-                  onChange={setDelay}
-                  tooltip={{ open: false }}
-                />
+                <Slider min={0} max={5} step={0.5} value={delay} onChange={setDelay} />
               </div>
             </div>
 
@@ -410,50 +355,27 @@ const TextToSpeed = ({ settings }) => {
               <Button
                 type="primary"
                 icon={
-                  playbackStatus === 'playing' ? (
-                    <PauseCircleOutlined style={{ fontSize: '22px' }} />
-                  ) : (
-                    <PlayCircleOutlined style={{ fontSize: '22px' }} />
-                  )
+                  playbackStatus === 'playing' ? <PauseCircleOutlined /> : <PlayCircleOutlined />
                 }
                 loading={loading}
                 onClick={handleSpeak}
                 className={`tts-btn-play ${playbackStatus !== 'idle' ? 'active' : ''}`}
               >
-                {loading
-                  ? 'ĐANG XỬ LÝ...'
-                  : playbackStatus === 'playing'
-                    ? 'TẠM DỪNG'
-                    : playbackStatus === 'paused'
-                      ? 'TIẾP TỤC PHÁT'
-                      : 'CHUYỂN ĐỔI & PHÁT'}
+                {loading ? 'ĐANG XỬ LÝ...' : playbackStatus === 'playing' ? 'TẠM DỪNG' : 'PHÁT'}
               </Button>
-
               {playbackStatus !== 'idle' && (
-                <Button
-                  danger
-                  icon={<StopOutlined />}
-                  onClick={handleStop}
-                  className="tts-btn-stop"
-                >
-                  KẾT THÚC
+                <Button danger icon={<StopOutlined />} onClick={handleStop}>
+                  DỪNG
                 </Button>
               )}
-
               {currentUrl && (
-                <Button
-                  icon={<DownloadOutlined />}
-                  onClick={handleDownload}
-                  className="tts-btn-download"
-                >
-                  TẢI VOICE
+                <Button icon={<DownloadOutlined />} onClick={handleDownload}>
+                  TẢI XUỐNG
                 </Button>
               )}
-
               <Button
                 icon={<HistoryOutlined />}
                 onClick={() => setShowHistoryModal(true)}
-                className="tts-btn-action"
                 title="Lịch sử"
               />
             </div>
@@ -467,8 +389,8 @@ const TextToSpeed = ({ settings }) => {
         history={history}
         onClear={() => setHistory([])}
         onSelect={(item) => {
-          setText(item.text || item.fullText || '');
-          setSelectedVoiceId(item.voiceId || AI_VOICES[0].id);
+          setText(item.text);
+          setSelectedVoiceId(item.voiceId);
           setShowHistoryModal(false);
         }}
       />

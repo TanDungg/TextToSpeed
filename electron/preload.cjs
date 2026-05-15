@@ -14,6 +14,30 @@ contextBridge.exposeInMainWorld('electron', {
   ttsRequest: (url, options) => {
     return ipcRenderer.invoke('tts-request', { url, options });
   },
+  videoDownload: (url) => {
+    return ipcRenderer.invoke('video-download', { url });
+  },
+  videoRemake: (inputPath, options) => {
+    return ipcRenderer.invoke('video-remake', { inputPath, options });
+  },
+  checkEnv: () => {
+    return ipcRenderer.invoke('check-env');
+  },
+  saveTempAudio: (buffer, ext) => {
+    return ipcRenderer.invoke('save-temp-audio', { buffer, ext });
+  },
+  extractAudio: (videoPath) => {
+    return ipcRenderer.invoke('extract-audio', { videoPath });
+  },
+  transcribeAudio: (audioPath, apiKey) => {
+    return ipcRenderer.invoke('transcribe-audio', { audioPath, apiKey });
+  },
+  readFileBase64: (filePath) => {
+    return ipcRenderer.invoke('read-file-base64', { filePath });
+  },
+  listGeminiModels: (apiKey) => {
+    return ipcRenderer.invoke('list-gemini-models', { apiKey });
+  },
   on: (channel, func) => {
     // Các kênh được phép lắng nghe
     const validChannels = ['autoclick-status-changed'];
