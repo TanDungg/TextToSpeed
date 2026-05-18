@@ -38,6 +38,9 @@ contextBridge.exposeInMainWorld('electron', {
   listGeminiModels: (apiKey) => {
     return ipcRenderer.invoke('list-gemini-models', { apiKey });
   },
+  showItemInFolder: (filePath) => {
+    return ipcRenderer.invoke('show-item-in-folder', { filePath });
+  },
   on: (channel, func) => {
     // Các kênh được phép lắng nghe
     const validChannels = ['autoclick-status-changed'];

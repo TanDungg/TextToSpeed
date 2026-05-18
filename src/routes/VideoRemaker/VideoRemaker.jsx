@@ -12,6 +12,7 @@ import {
   Progress,
   Tag,
   Divider,
+  Modal,
 } from 'antd';
 import {
   DownloadCloud,
@@ -20,14 +21,24 @@ import {
   RotateCw,
   Zap,
   Info,
-  CheckCircle2,
   ExternalLink,
+  History,
+  FolderOpen,
+  Trash2,
 } from 'lucide-react';
 import './VideoRemakerStyles.scss';
 
 import TTSProvider from '../../_service/TTSProvider';
 
 const { Title, Text } = Typography;
+
+const convertVttToSrt = (vttText) => {
+  if (!vttText) return '';
+  return vttText
+    .replace(/^WEBVTT\r?\n(Kind:.*\r?\n)?(Language:.*\r?\n)?/i, '')
+    .replace(/(\d{2}):(\d{2}):(\d{2})\.(\d{3})/g, '$1:$2:$3,$4')
+    .trim();
+};
 
 const VideoRemaker = ({ settings }) => {
   const [url, setUrl] = useState('');
@@ -46,8 +57,23 @@ const VideoRemaker = ({ settings }) => {
     ttsServer: 'edge',
     ttsVoice: 'vi-VN-HoaiMyNeural',
     ttsSpeed: 1.0, // Tốc độ giọng đọc riêng biệt
+    reviewSrt: false, // Tùy chọn xem và sửa phụ đề trước khi lồng tiếng
   });
+  const [showSrtModal, setShowSrtModal] = useState(false);
+  const [srtText, setSrtText] = useState('');
   const [envStatus, setEnvStatus] = useState({ ffmpeg: true, ytdlp: true });
+  const [history, setHistory] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('video_remake_history') || '[]');
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const getBasename = (filePath) => {
+    if (!filePath) return '';
+    return filePath.split(/[\\/]/).pop();
+  };
 
   useEffect(() => {
     const checkEnv = async () => {
@@ -93,190 +119,425 @@ const VideoRemaker = ({ settings }) => {
       setProgress(40);
       addLog(`Đã tải video: ${inputPath}`, 'success');
 
-      // Step 2: Translate (Real AI Voice Extraction & Dubbing)
+      // Step 2: Translate (Real AI Voice Extraction & Dubbing - Two-Pass timing alignment)
+      let remakedNoVoicePath = '';
+      let externalAudioList = [];
       let remakeOptions = { ...options };
+      const hasSubtitles = !!downloadRes.subContent;
+
       if (options.translate) {
+        setStatus('remaking');
+        addLog('Pass 1: Đang lách bản quyền & đổi tốc độ video gốc...', 'process');
+
+        const firstRemakeOptions = {
+          ...options,
+          translate: false, // Chỉ xử lý hình ảnh và tốc độ video ở Pass 1
+        };
+        const firstRemakeRes = await window.electron.videoRemake(inputPath, firstRemakeOptions);
+        if (!firstRemakeRes.ok) {
+          throw new Error(firstRemakeRes.error);
+        }
+        remakedNoVoicePath = firstRemakeRes.path;
+        addLog(
+          `Đã hoàn tất Pass 1. Video lách bản quyền: ${getBasename(remakedNoVoicePath)}`,
+          'success'
+        );
+
         setStatus('translating');
-
-        // 1. Trích xuất audio gốc
-        addLog('Đang trích xuất âm thanh gốc từ video...', 'process');
-        const extractRes = await window.electron.extractAudio(inputPath);
-        if (!extractRes.ok) throw new Error('Không thể trích xuất âm thanh.');
-
-        // 2 & 3. Chuyển âm thanh thành văn bản & Dịch thuật
         let translatedText = '';
-        const aiApiKey = settings?.geminiKey || settings?.googleKey || settings?.openaiKey;
 
-        try {
-          if (settings?.openaiKey) {
-            addLog('Đang nhận diện giọng nói bằng AI Whisper...', 'process');
-            const sttRes = await window.electron.transcribeAudio(
-              extractRes.path,
-              settings.openaiKey
-            );
+        if (hasSubtitles) {
+          addLog('Phát hiện phụ đề gốc từ YouTube! Đang chuyển đổi và dịch thuật...', 'success');
+          const originalSrt = convertVttToSrt(downloadRes.subContent);
 
-            if (sttRes.ok) {
-              const transcribedText = sttRes.text;
-              addLog(`Đã nghe được: "${transcribedText.substring(0, 50)}..."`, 'success');
+          try {
+            if (settings?.openaiKey) {
+              const isGroq = settings.openaiKey.startsWith('gsk_');
+              const providerName = isGroq ? 'Groq' : 'OpenAI';
+              addLog(`Đang dịch phụ đề bằng AI của ${providerName}...`, 'process');
 
-              // Dịch thuật văn bản dùng Gemini/GPT
-              addLog(`Đang dịch thuật sang ${options.targetLang}...`, 'process');
-              const prompt = `Translate the following text to ${options.targetLang}. Return ONLY the translated text: ${transcribedText}`;
-              const translateUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${aiApiKey}`;
+              const prompt = `Translate the following SRT subtitles to ${options.targetLang}. Keep the exact same SRT format, timestamps, and structure. Do NOT add any extra text outside the SRT block:\n\n${originalSrt}`;
+
+              let translateUrl = 'https://api.openai.com/v1/chat/completions';
+              let translateModel = 'gpt-4o-mini';
+              if (isGroq) {
+                translateUrl = 'https://api.groq.com/openai/v1/chat/completions';
+                translateModel = 'llama-3.3-70b-versatile';
+              }
 
               const transRes = await window.electron.ttsRequest(translateUrl, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: { contents: [{ parts: [{ text: prompt }] }] },
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${settings.openaiKey}`,
+                },
+                body: {
+                  model: translateModel,
+                  messages: [{ role: 'user', content: prompt }],
+                },
               });
 
-              if (transRes.ok) {
-                translatedText = transRes.data.candidates[0].content.parts[0].text;
+              if (transRes.ok && transRes.data?.choices?.[0]?.message?.content) {
+                translatedText = transRes.data.choices[0].message.content
+                  .replace(/```srt/gi, '')
+                  .replace(/```/g, '')
+                  .trim();
               } else {
-                translatedText = transcribedText; // Không dịch được thì dùng bản gốc
+                translatedText = originalSrt;
+              }
+            } else if (settings?.geminiKey) {
+              addLog('Đang dịch phụ đề bằng Google Gemini 1.5 Flash (Free)...', 'process');
+
+              const prompt = `Translate the following SRT subtitles to ${
+                options.targetLang === 'vi'
+                  ? 'Tiếng Việt'
+                  : options.targetLang === 'en'
+                    ? 'Tiếng Anh'
+                    : 'Tiếng Trung'
+              }. Keep the exact same SRT format, timestamps, and structure. Do NOT add any extra text, and do not wrap in markdown code blocks. Here is the SRT content:\n\n${originalSrt}`;
+
+              const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${settings.geminiKey}`;
+
+              const response = await window.electron.ttsRequest(geminiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: {
+                  contents: [{ parts: [{ text: prompt }] }],
+                },
+              });
+
+              if (response.ok && response.data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+                translatedText = response.data.candidates[0].content.parts[0].text
+                  .replace(/```srt/gi, '')
+                  .replace(/```/g, '')
+                  .trim();
+              } else {
+                translatedText = originalSrt;
               }
             } else {
-              throw new Error(sttRes.error);
+              throw new Error(
+                'Tính năng dịch phụ đề bắt buộc phải có OpenAI/Groq Key hoặc Gemini API Key trong phần Cài đặt.'
+              );
             }
-          } else {
-            throw new Error('Thiếu OpenAI Key');
+            addLog('Đã dịch thuật phụ đề thành công!', 'success');
+          } catch (err) {
+            addLog(`Lỗi dịch phụ đề: ${err.message}. Sử dụng phụ đề gốc.`, 'warning');
+            translatedText = originalSrt;
           }
-        } catch (err) {
-          // FALLBACK TO GEMINI AUDIO
-          if (
-            err.message.includes('quota') ||
-            err.message.includes('API Key') ||
-            err.message.includes('not found')
-          ) {
-            addLog('Đang kiểm tra danh sách model Gemini khả dụng...', 'warning');
+        } else {
+          // Fallback: Trích xuất audio gốc đã thay đổi tốc độ từ video remake Pass 1
+          addLog('Đang trích xuất âm thanh đã đổi tốc độ từ video remake...', 'process');
+          const extractRes = await window.electron.extractAudio(remakedNoVoicePath);
+          if (!extractRes.ok) throw new Error('Không thể trích xuất âm thanh từ video đã remake.');
 
-            const modelsRes = await window.electron.listGeminiModels(aiApiKey);
-            if (modelsRes.ok) {
-              const availableModels = modelsRes.models.map((m) => m.name.replace('models/', ''));
+          // 2 & 3. Chuyển âm thanh thành văn bản & Dịch thuật
+          try {
+            if (settings?.openaiKey) {
+              const isGroq = settings.openaiKey.startsWith('gsk_');
+              const providerName = isGroq ? 'Groq' : 'OpenAI';
 
-              // Thử từng model trong danh sách cho đến khi thành công
-              let success = false;
-              // Sắp xếp lại danh sách ưu tiên
-              const priorityModels = availableModels.sort((a, b) => {
-                const getScore = (name) => {
-                  if (name.includes('2.5-flash')) return 100;
-                  if (name.includes('2.0-flash')) return 90;
-                  if (name.includes('1.5-flash')) return 80;
-                  if (name.includes('2.5-pro')) return 70;
-                  if (name.includes('2.0-pro')) return 60;
-                  return 0;
-                };
-                return getScore(b) - getScore(a);
-              });
+              addLog(
+                `Đang nhận diện giọng nói bằng AI Whisper của ${providerName} (SRT Format)...`,
+                'process'
+              );
+              const sttRes = await window.electron.transcribeAudio(
+                extractRes.path,
+                settings.openaiKey
+              );
+
+              if (sttRes.ok) {
+                const transcribedText = sttRes.text;
+                addLog(
+                  `Đã nhận diện thành công SRT. Đang dịch thuật bằng ${providerName}...`,
+                  'success'
+                );
+
+                const prompt = `Translate the following SRT subtitles to ${options.targetLang}. Keep the exact same SRT format, timestamps, and structure. Do NOT add any extra text outside the SRT block:\n\n${transcribedText}`;
+
+                let translateUrl = 'https://api.openai.com/v1/chat/completions';
+                let translateModel = 'gpt-4o-mini';
+
+                if (isGroq) {
+                  translateUrl = 'https://api.groq.com/openai/v1/chat/completions';
+                  translateModel = 'llama-3.3-70b-versatile';
+                }
+
+                const transRes = await window.electron.ttsRequest(translateUrl, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${settings.openaiKey}`,
+                  },
+                  body: {
+                    model: translateModel,
+                    messages: [{ role: 'user', content: prompt }],
+                  },
+                });
+
+                if (transRes.ok && transRes.data?.choices?.[0]?.message?.content) {
+                  translatedText = transRes.data.choices[0].message.content
+                    .replace(/```srt/gi, '')
+                    .replace(/```/g, '')
+                    .trim();
+                } else {
+                  addLog(
+                    `Lỗi dịch bằng ${providerName}, sử dụng văn bản gốc nhận diện từ Whisper.`,
+                    'warning'
+                  );
+                  translatedText = transcribedText;
+                }
+              } else {
+                throw new Error(sttRes.error);
+              }
+            } else if (settings?.geminiKey) {
+              // Sử dụng Gemini 1.5 Flash để dịch & trích xuất phụ đề trực tiếp từ âm thanh (MIỄN PHÍ)
+              addLog(
+                'Đang sử dụng Google Gemini 1.5 Flash để trích xuất & dịch phụ đề trực tiếp từ âm thanh (Free)...',
+                'process'
+              );
 
               const base64Res = await window.electron.readFileBase64(extractRes.path);
-              if (!base64Res.ok) throw new Error('Không thể đọc file âm thanh.');
+              if (!base64Res.ok) {
+                throw new Error(`Không thể đọc file âm thanh: ${base64Res.error}`);
+              }
 
-              for (const modelName of priorityModels) {
-                if (success) break;
-                addLog(`Đang thử dịch bằng model: ${modelName}...`, 'process');
+              const base64Audio = base64Res.data;
+              const prompt = `Bạn là một chuyên gia phụ đề và lồng tiếng phim chuyên nghiệp. Hãy nghe cực kỳ kỹ lưỡng tệp âm thanh đính kèm này và tạo phụ đề dịch sang ${
+                options.targetLang === 'vi'
+                  ? 'Tiếng Việt'
+                  : options.targetLang === 'en'
+                    ? 'Tiếng Anh'
+                    : 'Tiếng Trung'
+              } theo định dạng SRT chuẩn 100%.
 
-                try {
-                  const geminiUrl = `https://generativelanguage.googleapis.com/v1/models/${modelName}:generateContent?key=${aiApiKey}`;
-                  const prompt = `Listen to this audio and translate its content to ${options.targetLang}. 
-                  IMPORTANT: The translation MUST be concise and brief to fit the video duration. 
-                  LƯU Ý: Bản dịch phải CỰC KỲ NGẮN GỌN, súc tích, lược bỏ các từ rườm rà để khớp với thời lượng video gốc. 
-                  Return ONLY the translated text.`;
+QUY TẮC BẮT BUỘC VỀ THỜI GIAN (RẤT QUAN TRỌNG):
+1. KHÔNG ĐƯỢC tự động lấy mốc bắt đầu của câu đầu tiên là 00:00:00,000 trừ khi nhân vật nói ngay tại giây thứ 0. Nếu đoạn đầu video chỉ có nhạc nền, tiếng động hoặc im lặng, mốc bắt đầu của phụ đề phải là THỜI ĐIỂM CHÍNH XÁC nhân vật mở miệng nói từ đầu tiên (ví dụ: nhân vật im lặng 12 giây rồi mới nói, thì mốc phải là 00:00:12,000 --> 00:00:16,320).
+2. KHÔNG ĐƯỢC viết các khối thời gian nối tiếp liên tiếp nhau một cách lười biếng (như 0-16, rồi 16-24, rồi 24-30). Giữa các câu nói nếu có khoảng trống im lặng, nhạc đệm hoặc ngắt giọng từ 0.5 giây trở lên, bạn phải tạo ra KHOẢNG TRỐNG THỜI GIAN tương ứng. Mốc bắt đầu của câu tiếp theo phải là lúc nhân vật BẮT ĐẦU NÓI câu tiếp theo đó, KHÔNG được bắt đầu ngay khi câu trước vừa kết thúc.
+3. Đảm bảo thời gian bắt đầu (start time) và kết thúc (end time) của mỗi câu phụ đề khớp chính xác đến từng mili giây với tiếng nói thực tế trong âm thanh gốc của nhân vật.
 
-                  const geminiRes = await window.electron.ttsRequest(geminiUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: {
-                      contents: [
+CHỈ trả về duy nhất chuỗi nội dung SRT thuần túy. Tuyệt đối không giải thích gì thêm, không bọc trong thẻ code markdown \`\`\`srt hay bất kỳ ký tự nào khác ngoài định dạng SRT.`;
+
+              const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${settings.geminiKey}`;
+
+              const response = await window.electron.ttsRequest(geminiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: {
+                  contents: [
+                    {
+                      parts: [
                         {
-                          parts: [
-                            { text: prompt },
-                            { inline_data: { mime_type: 'audio/mp3', data: base64Res.data } },
-                          ],
+                          inlineData: {
+                            mimeType: 'audio/mp3',
+                            data: base64Audio,
+                          },
+                        },
+                        {
+                          text: prompt,
                         },
                       ],
                     },
-                  });
+                  ],
+                },
+              });
 
-                  if (geminiRes.ok && geminiRes.data.candidates?.[0]?.content?.parts?.[0]?.text) {
-                    translatedText = geminiRes.data.candidates[0].content.parts[0].text;
-                    addLog(`Thành công! Đã dịch xong bằng ${modelName}`, 'success');
-                    success = true;
-                  } else {
-                    const errorMsg = geminiRes.error?.error?.message || 'Bận hoặc không phản hồi.';
-                    addLog(`Model ${modelName} không khả dụng: ${errorMsg}`, 'warning');
-                  }
-                } catch (e) {
-                  addLog(`Lỗi khi thử ${modelName}: ${e.message}`, 'warning');
-                }
+              if (!response.ok) {
+                const errMsg =
+                  typeof response.error === 'object'
+                    ? JSON.stringify(response.error)
+                    : response.error || 'Lỗi API Gemini';
+                throw new Error(errMsg);
               }
 
-              if (!success)
-                throw new Error(
-                  'Tất cả các model Gemini đều đang bận hoặc không thể xử lý. Vui lòng thử lại sau.'
-                );
+              const textResult = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+              if (!textResult) {
+                throw new Error('Gemini không phản hồi văn bản phụ đề.');
+              }
+
+              translatedText = textResult
+                .replace(/```srt/gi, '')
+                .replace(/```/g, '')
+                .trim();
+
+              addLog(`Đã dịch & trích xuất phụ đề thành công bằng Gemini 1.5 Flash!`, 'success');
             } else {
-              throw new Error('Không thể liệt kê danh sách model từ Google.');
+              throw new Error(
+                'Tính năng lồng tiếng theo nhịp (SRT) bắt buộc phải có OpenAI/Groq Key hoặc Gemini API Key trong phần Cài đặt.'
+              );
             }
-          } else {
+          } catch (err) {
+            addLog(`Lỗi trích xuất/dịch: ${err.message}`, 'error');
             throw err;
           }
         }
 
-        addLog(`Kết quả dịch: "${translatedText.substring(0, 50)}..."`, 'success');
-        remakeOptions.caption = translatedText;
+        if (options.reviewSrt) {
+          addLog('Đang chờ người dùng kiểm tra và chỉnh sửa phụ đề...', 'process');
+          setSrtText(translatedText);
+          setShowSrtModal(true);
+          setLoading(false);
+          const editedSrt = await new Promise((resolve, reject) => {
+            window.resolveSrtPromise = resolve;
+            window.rejectSrtPromise = reject;
+          });
+          setLoading(true);
+          if (!editedSrt) {
+            throw new Error('Đã hủy tiến trình bởi người dùng.');
+          }
+          translatedText = editedSrt;
+          addLog('Đã xác nhận phụ đề! Tiếp tục tiến trình remake...', 'success');
+        }
 
-        // 4. Tạo giọng đọc lồng tiếng mới
+        // Hàm parse SRT siêu robust, tự động nhận diện cả định dạng có hoặc không có số thứ tự
+        const parseSRT = (srtString) => {
+          if (!srtString) return [];
+          const blocks = srtString.split(/\n\s*\n/);
+          const result = [];
+
+          for (const block of blocks) {
+            const lines = block
+              .trim()
+              .split('\n')
+              .map((l) => l.trim())
+              .filter(Boolean);
+            if (lines.length === 0) continue;
+
+            let timeLineIdx = -1;
+            let match = null;
+
+            // Quét qua các dòng để tìm dòng chứa mốc thời gian (chấp nhận cả dấu phẩy , và dấu chấm .)
+            for (let i = 0; i < lines.length; i++) {
+              const m = lines[i].match(
+                /(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})/
+              );
+              if (m) {
+                timeLineIdx = i;
+                match = m;
+                break;
+              }
+            }
+
+            if (match && timeLineIdx !== -1) {
+              const startMs =
+                parseInt(match[1]) * 3600000 +
+                parseInt(match[2]) * 60000 +
+                parseInt(match[3]) * 1000 +
+                parseInt(match[4]);
+
+              // Lấy tất cả các dòng sau dòng thời gian làm nội dung phụ đề
+              const text = lines
+                .slice(timeLineIdx + 1)
+                .join(' ')
+                .trim();
+
+              // Loại bỏ các âm thanh phụ trong ngoặc, ví dụ: (bright music), [Sparky barks]
+              const cleanText = text.replace(/[\(\[\{].*?[\)\]\}]/g, '').trim();
+
+              if (cleanText) {
+                result.push({ text: cleanText, startMs });
+              }
+            }
+          }
+          return result;
+        };
+
+        const srtBlocks = parseSRT(translatedText);
+        externalAudioList = [];
+
+        // 4. Tạo giọng đọc lồng tiếng mới cho từng đoạn
         try {
-          addLog(`Đang tạo giọng lồng tiếng bằng ${options.ttsServer.toUpperCase()}...`, 'process');
-          let audioBlob;
+          addLog(
+            `Đang tạo giọng lồng tiếng (${srtBlocks.length} câu) bằng ${options.ttsServer.toUpperCase()}...`,
+            'process'
+          );
 
-          if (options.ttsServer === 'edge') {
-            audioBlob = await TTSProvider.speakWithEdge(
-              translatedText,
-              options.ttsVoice,
-              options.ttsSpeed
-            );
-          } else if (options.ttsServer === 'google-cloud') {
-            audioBlob = await TTSProvider.speakWithGoogleCloud(
-              translatedText,
-              options.ttsVoice,
-              settings.googleKey,
-              0,
-              options.ttsSpeed
-            );
-          } else if (options.ttsServer === 'fpt') {
-            audioBlob = await TTSProvider.speakWithFPT(
-              translatedText,
-              options.ttsVoice,
-              settings.fptKey,
-              options.ttsSpeed - 1
-            );
-          } else if (options.ttsServer === 'elevenlabs') {
-            audioBlob = await TTSProvider.speakWithElevenLabs(
-              translatedText,
-              options.ttsVoice,
-              settings.elevenLabsKey
-            );
-          } else {
-            audioBlob = await TTSProvider.getGoogleAudioBlob(translatedText, options.targetLang);
+          for (let i = 0; i < srtBlocks.length; i++) {
+            const block = srtBlocks[i];
+            if (!block.text.trim()) continue;
+
+            let audioBlob;
+            if (options.ttsServer === 'edge') {
+              audioBlob = await TTSProvider.speakWithEdge(
+                block.text,
+                options.ttsVoice,
+                1.0 // Bỏ chọn tốc độ voice, dùng mặc định 1.0 để tự nhiên nhất
+              );
+            } else if (options.ttsServer === 'google-cloud') {
+              audioBlob = await TTSProvider.speakWithGoogleCloud(
+                block.text,
+                options.ttsVoice,
+                settings.googleKey,
+                0,
+                1.0 // Bỏ chọn tốc độ voice, dùng mặc định 1.0
+              );
+            } else if (options.ttsServer === 'fpt') {
+              audioBlob = await TTSProvider.speakWithFPT(
+                block.text,
+                options.ttsVoice,
+                settings.fptKey,
+                0 // 0 tương ứng với tốc độ 1.0 của FPT
+              );
+            } else if (options.ttsServer === 'elevenlabs') {
+              audioBlob = await TTSProvider.speakWithElevenLabs(
+                block.text,
+                options.ttsVoice,
+                settings.elevenLabsKey
+              );
+            } else {
+              audioBlob = await TTSProvider.getGoogleAudioBlob(block.text, options.targetLang);
+            }
+
+            const arrayBuffer = await audioBlob.arrayBuffer();
+            // Lưu tệp âm thanh tạm thời qua Main Process IPC và lấy đường dẫn lưu tệp
+            const audioPath = await window.electron.saveTempAudio(arrayBuffer);
+
+            // Tính toán thời gian bắt đầu chính xác:
+            // - Nếu dùng phụ đề YouTube gốc: Phải chia cho speed vì mốc thời gian là của video gốc.
+            // - Nếu dùng AI trích xuất từ video đã remake: Không chia vì mốc thời gian đã đổi sẵn theo tốc độ mới.
+            const finalStartMs = hasSubtitles
+              ? Math.round(block.startMs / options.speed)
+              : block.startMs;
+
+            externalAudioList.push({ path: audioPath, startMs: finalStartMs });
+
+            // Cập nhật progress giả lập
+            if (i % 3 === 0) setProgress(50 + Math.floor((i / srtBlocks.length) * 20));
           }
 
-          const arrayBuffer = await audioBlob.arrayBuffer();
-          const audioPath = await window.electron.saveTempAudio(arrayBuffer);
-          remakeOptions.externalAudio = audioPath;
-          addLog('Đã tạo xong giọng lồng tiếng AI.', 'success');
+          remakeOptions.externalAudioList = externalAudioList;
+          addLog('Đã tạo xong toàn bộ giọng lồng tiếng AI theo nhịp.', 'success');
         } catch (ttsErr) {
           addLog('Lỗi tạo giọng đọc: ' + ttsErr.message, 'error');
         }
 
-        setProgress(70);
+        setProgress(75);
       }
 
-      // Step 3: Remake (Lách bản quyền & Lồng tiếng)
-      setStatus('remaking');
-      addLog('Đang thực hiện remake & lồng tiếng video...', 'process');
-      const remakeRes = await window.electron.videoRemake(inputPath, remakeOptions);
+      // Step 3: Remake (Trộn video & lồng tiếng)
+      let remakeRes;
+      if (options.translate) {
+        // Pass 2: Trộn âm thanh AI vào video đã remake ở Pass 1
+        setProgress(85);
+        setStatus('remaking');
+        addLog('Pass 2: Đang trộn giọng đọc lồng tiếng AI vào video đã remake...', 'process');
+
+        const finalRemakeOptions = {
+          ...options,
+          flip: false,
+          crop: false,
+          grain: false,
+          blurBg: false,
+          speed: 1.0, // Đặt là 1.0 vì video đã được lách & tăng tốc ở Pass 1 rồi
+          externalAudioList: externalAudioList,
+        };
+
+        remakeRes = await window.electron.videoRemake(remakedNoVoicePath, finalRemakeOptions);
+      } else {
+        // Chỉ chạy 1 Pass duy nhất lách bản quyền hình ảnh (nếu không dịch)
+        setStatus('remaking');
+        addLog('Đang tiến hành lách bản quyền & kết xuất video...', 'process');
+        remakeRes = await window.electron.videoRemake(inputPath, remakeOptions);
+      }
 
       if (!remakeRes.ok) {
         throw new Error(remakeRes.error);
@@ -285,7 +546,26 @@ const VideoRemaker = ({ settings }) => {
       setProgress(100);
       setStatus('done');
       addLog(`Hoàn tất! Video lưu tại: ${remakeRes.path}`, 'success');
-      message.success('Đã remake video thành công!');
+      message.success('Đã remake & lồng tiếng video thành công!');
+
+      // Lưu lịch sử remake
+      const historyItem = {
+        id: Date.now(),
+        url: url,
+        outputPath: remakeRes.path,
+        targetLang: options.targetLang,
+        time: new Date().toLocaleString('vi-VN', {
+          hour: '2-digit',
+          minute: '2-digit',
+          day: '2-digit',
+          month: '2-digit',
+        }),
+      };
+      setHistory((prev) => {
+        const updated = [historyItem, ...prev];
+        localStorage.setItem('video_remake_history', JSON.stringify(updated));
+        return updated;
+      });
     } catch (err) {
       addLog(`Lỗi: ${err.message}`, 'error');
       message.error(err.message);
@@ -320,7 +600,13 @@ const VideoRemaker = ({ settings }) => {
                 size="large"
                 placeholder="Dán link Youtube, Douyin, TikTok, Facebook vào đây..."
                 value={url}
-                onChange={(e) => setUrl(e.target.value)}
+                onChange={(e) => {
+                  setUrl(e.target.value);
+                  if (status === 'done') {
+                    setStatus('idle');
+                    setProgress(0);
+                  }
+                }}
                 className="custom-input"
                 prefix={<ExternalLink size={16} color="#6366f1" />}
                 style={{ marginBottom: 32 }}
@@ -420,70 +706,63 @@ const VideoRemaker = ({ settings }) => {
 
                         <div style={{ marginBottom: 12 }}>
                           <p style={{ marginBottom: 4, fontSize: 12, color: '#94a3b8' }}>
-                            Giọng đọc & Tốc độ Voice
+                            Giọng đọc lồng tiếng
                           </p>
-                          <Row gutter={8}>
-                            <Col span={14}>
-                              <Select
-                                size="large"
-                                value={options.ttsVoice}
-                                style={{ width: '100%' }}
-                                onChange={(val) => setOptions({ ...options, ttsVoice: val })}
-                                options={
-                                  options.ttsServer === 'edge'
+                          <Select
+                            size="large"
+                            value={options.ttsVoice}
+                            style={{ width: '100%' }}
+                            onChange={(val) => setOptions({ ...options, ttsVoice: val })}
+                            options={
+                              options.ttsServer === 'edge'
+                                ? [
+                                    {
+                                      label: 'Nữ - Hoài My (Edge)',
+                                      value: 'vi-VN-HoaiMyNeural',
+                                    },
+                                    {
+                                      label: 'Nam - Nam Minh (Edge)',
+                                      value: 'vi-VN-NamMinhNeural',
+                                    },
+                                    {
+                                      label: 'Nữ - Phương Mỹ (Edge)',
+                                      value: 'vi-VN-PhuongMyNeural',
+                                    },
+                                    {
+                                      label: 'Nam - Mạnh Khôi (Edge)',
+                                      value: 'vi-VN-ManhKhoiNeural',
+                                    },
+                                  ]
+                                : options.ttsServer === 'fpt'
+                                  ? [
+                                      { label: 'Nữ - Ban Mai (FPT)', value: 'banmai' },
+                                      { label: 'Nam - Lê Minh (FPT)', value: 'leminh' },
+                                      { label: 'Nữ - Thu Minh (FPT)', value: 'thuminh' },
+                                      { label: 'Nữ - Gia Huy (FPT)', value: 'giahuy' },
+                                    ]
+                                  : options.ttsServer === 'google-cloud'
                                     ? [
-                                        {
-                                          label: 'Nữ - Hoài My (Edge)',
-                                          value: 'vi-VN-HoaiMyNeural',
-                                        },
-                                        {
-                                          label: 'Nam - Nam Minh (Edge)',
-                                          value: 'vi-VN-NamMinhNeural',
-                                        },
-                                        {
-                                          label: 'Nữ - Phương Mỹ (Edge)',
-                                          value: 'vi-VN-PhuongMyNeural',
-                                        },
-                                        {
-                                          label: 'Nam - Mạnh Khôi (Edge)',
-                                          value: 'vi-VN-ManhKhoiNeural',
-                                        },
+                                        { label: 'Nữ - Neural2-A', value: 'vi-VN-Neural2-A' },
+                                        { label: 'Nam - Neural2-B', value: 'vi-VN-Neural2-B' },
+                                        { label: 'Nữ - Wavenet-A', value: 'vi-VN-Wavenet-A' },
+                                        { label: 'Nam - Wavenet-B', value: 'vi-VN-Wavenet-B' },
                                       ]
-                                    : options.ttsServer === 'fpt'
-                                      ? [
-                                          { label: 'Nữ - Ban Mai (FPT)', value: 'banmai' },
-                                          { label: 'Nam - Lê Minh (FPT)', value: 'leminh' },
-                                          { label: 'Nữ - Thu Minh (FPT)', value: 'thuminh' },
-                                          { label: 'Nữ - Gia Huy (FPT)', value: 'giahuy' },
-                                        ]
-                                      : options.ttsServer === 'google-cloud'
-                                        ? [
-                                            { label: 'Nữ - Neural2-A', value: 'vi-VN-Neural2-A' },
-                                            { label: 'Nam - Neural2-B', value: 'vi-VN-Neural2-B' },
-                                            { label: 'Nữ - Wavenet-A', value: 'vi-VN-Wavenet-A' },
-                                            { label: 'Nam - Wavenet-B', value: 'vi-VN-Wavenet-B' },
-                                          ]
-                                        : [{ label: 'Mặc định', value: 'default' }]
-                                }
-                              />
-                            </Col>
-                            <Col span={10}>
-                              <Select
-                                size="large"
-                                value={options.ttsSpeed}
-                                style={{ width: '100%' }}
-                                onChange={(val) => setOptions({ ...options, ttsSpeed: val })}
-                                options={[
-                                  { label: '0.8x', value: 0.8 },
-                                  { label: '0.9x', value: 0.9 },
-                                  { label: '1.0x', value: 1.0 },
-                                  { label: '1.1x', value: 1.1 },
-                                  { label: '1.2x', value: 1.2 },
-                                ]}
-                              />
-                            </Col>
-                          </Row>
+                                    : [{ label: 'Mặc định', value: 'default' }]
+                            }
+                            className="custom-select"
+                          />
                         </div>
+                      </div>
+                    )}
+
+                    {options.translate && (
+                      <div style={{ marginTop: 12, marginBottom: 16 }}>
+                        <Checkbox
+                          checked={options.reviewSrt}
+                          onChange={(e) => setOptions({ ...options, reviewSrt: e.target.checked })}
+                        >
+                          Kiểm tra & Sửa phụ đề trước khi lồng tiếng
+                        </Checkbox>
                       </div>
                     )}
 
@@ -512,7 +791,7 @@ const VideoRemaker = ({ settings }) => {
                   loading={loading}
                   className="process-btn"
                 >
-                  {status === 'idle' ? 'Bắt đầu Remake Video' : 'Đang xử lý...'}
+                  {loading ? 'Đang xử lý...' : 'Bắt đầu Remake Video'}
                 </Button>
               </div>
 
@@ -559,14 +838,78 @@ const VideoRemaker = ({ settings }) => {
                 </div>
               </Card>
 
-              <Card className="tips-card-inner" style={{ marginTop: 24 }}>
-                <Title level={5}>
-                  <CheckCircle2 size={16} /> Mẹo nhỏ
-                </Title>
-                <ul className="tips-list">
-                  <li>Lật ngang và thay đổi tốc độ giúp lách bản quyền tốt nhất.</li>
-                  <li>Sử dụng link Douyin để có chất lượng video cao nhất.</li>
-                </ul>
+              <Card
+                className="history-card-inner"
+                style={{ marginTop: 24 }}
+                title={
+                  <div className="card-title">
+                    <History size={16} />
+                    <span>Lịch sử Remake</span>
+                  </div>
+                }
+              >
+                <div className="history-container">
+                  {history.length === 0 ? (
+                    <div className="empty-history">Chưa có lịch sử remake.</div>
+                  ) : (
+                    history.map((item) => (
+                      <div key={item.id} className="history-item">
+                        <div className="history-header">
+                          <span className="history-time">{item.time}</span>
+                          <span className="history-lang">
+                            Dịch: {item.targetLang.toUpperCase()}
+                          </span>
+                        </div>
+                        <div className="history-url" title={item.url}>
+                          {item.url}
+                        </div>
+                        <div className="history-path" title={item.outputPath}>
+                          Lưu: {getBasename(item.outputPath)}
+                        </div>
+                        <div className="history-actions">
+                          <Button
+                            type="text"
+                            size="small"
+                            icon={<ExternalLink size={12} />}
+                            onClick={() => {
+                              setUrl(item.url);
+                              message.success('Đã nạp lại link video!');
+                            }}
+                          >
+                            Dùng lại link
+                          </Button>
+                          <Button
+                            type="text"
+                            size="small"
+                            icon={<FolderOpen size={12} />}
+                            onClick={() => {
+                              window.electron.showItemInFolder(item.outputPath);
+                            }}
+                          >
+                            Mở thư mục
+                          </Button>
+                          <Button
+                            type="text"
+                            size="small"
+                            danger
+                            icon={<Trash2 size={12} />}
+                            onClick={() => {
+                              setHistory((prev) => {
+                                const updated = prev.filter((h) => h.id !== item.id);
+                                localStorage.setItem(
+                                  'video_remake_history',
+                                  JSON.stringify(updated)
+                                );
+                                return updated;
+                              });
+                              message.success('Đã xóa lịch sử!');
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </Card>
 
               {(!envStatus.ffmpeg || !envStatus.ytdlp) && (
@@ -608,6 +951,48 @@ const VideoRemaker = ({ settings }) => {
           </Col>
         </Row>
       </Card>
+
+      <Modal
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1rem' }}>
+            <History size={20} color="#6366f1" />
+            <span>Kiểm tra & Hiệu chỉnh Phụ đề Lồng tiếng</span>
+          </div>
+        }
+        open={showSrtModal}
+        onOk={() => {
+          if (window.resolveSrtPromise) {
+            window.resolveSrtPromise(srtText);
+          }
+          setShowSrtModal(false);
+        }}
+        onCancel={() => {
+          if (window.rejectSrtPromise) {
+            window.rejectSrtPromise(new Error('Đã hủy bởi người dùng.'));
+          }
+
+          setShowSrtModal(false);
+        }}
+        okText="Xác nhận & Tiếp tục Remake"
+        cancelText="Hủy bỏ"
+        width={700}
+        maskClosable={false}
+        destroyOnClose
+      >
+        <p style={{ color: '#64748b', marginBottom: 12 }}>
+          Dưới đây là phụ đề (định dạng SRT) đã được AI trích xuất và dịch từ video gốc. Bạn có thể
+          chỉnh sửa lại bản dịch hoặc điều chỉnh mốc thời gian để khớp voice hoàn hảo nhất:
+        </p>
+        <Input.TextArea
+          rows={16}
+          value={srtText}
+          onChange={(e) => setSrtText(e.target.value)}
+          style={{ fontFamily: 'monospace', fontSize: '13px', borderRadius: '12px' }}
+          placeholder="1
+00:00:01,000 --> 00:00:04,000
+Xin chào các bạn..."
+        />
+      </Modal>
     </div>
   );
 };

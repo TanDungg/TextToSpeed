@@ -79,24 +79,37 @@ const SettingsModal = ({ open, onCancel, settings, onSave }) => {
 
         <Divider orientation="left">
           <Space>
-            <KeyOutlined /> Cấu hình OpenAI
+            <KeyOutlined /> Cấu hình OpenAI / Groq (Tốc độ cao)
           </Space>
         </Divider>
 
-        <Form.Item label="OpenAI API Key" name="openaiKey">
-          <Input.Password placeholder="sk-..." />
+        <Form.Item label="OpenAI / Groq API Key" name="openaiKey">
+          <Input.Password placeholder="Nhập sk-... hoặc gsk_..." />
         </Form.Item>
         <Alert
           message={
             <div style={{ fontSize: '12px' }}>
-              <Text strong>Cách lấy Key OpenAI:</Text>
+              <Text strong>Cách lấy Key:</Text>
+              <br />
+              • <Text strong style={{ color: '#dc2626' }}>Để dùng Groq (Nhẹ, Miễn phí & Cực nhanh):</Text>
               <br />
               1. Truy cập{' '}
-              <Link href="https://platform.openai.com/api-keys" target="_blank">
-                OpenAI API Keys <LinkOutlined />
+              <Link href="https://console.groq.com/keys" target="_blank">
+                Groq Console <LinkOutlined />
               </Link>
               .<br />
-              2. Nhấn <Text code>Create new secret key</Text> và copy mã <Text code>sk-...</Text>.
+              2. Nhấn <Text code>Create API Key</Text> và dán mã bắt đầu bằng <Text code>gsk_...</Text> vào ô trên.
+              <br />
+              <div style={{ marginTop: '8px' }}>
+                • <Text strong>Để dùng OpenAI (Trả phí):</Text>
+                <br />
+                1. Truy cập{' '}
+                <Link href="https://platform.openai.com/api-keys" target="_blank">
+                  OpenAI API Keys <LinkOutlined />
+                </Link>
+                .<br />
+                2. Tạo key và dán mã bắt đầu bằng <Text code>sk-...</Text>.
+              </div>
             </div>
           }
           type="success"

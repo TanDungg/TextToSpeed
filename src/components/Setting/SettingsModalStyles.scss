@@ -95,6 +95,9 @@
     border: none !important;
     background: rgba(248, 250, 252, 0.8) !important;
     padding: 12px 16px !important;
+    word-break: normal;
+    overflow-wrap: break-word;
+    word-wrap: break-word;
 
     &-info {
       background: rgba(219, 234, 254, 0.6) !important;
