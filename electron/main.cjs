@@ -318,6 +318,24 @@ async function handleVideoRemake(event, { inputPath, options }) {
     console.warn('Failed to check audio streams:', e.message);
   }
 
+  // Kiểm tra xem video có video stream không
+  let hasVideo = false;
+  try {
+    const { execSync } = require('child_process');
+    const videoCheck = execSync(
+      `ffprobe -v error -select_streams v -show_entries stream=index -of csv=p=0 "${inputPath}"`
+    )
+      .toString()
+      .trim();
+    hasVideo = videoCheck !== '';
+  } catch (e) {
+    console.warn('Failed to check video streams:', e.message);
+  }
+
+  if (!hasAudio && !hasVideo) {
+    return { ok: false, error: 'File đầu vào không hợp lệ hoặc không chứa bất kỳ luồng âm thanh hoặc video nào.' };
+  }
+
   let filters = [];
   if (options.flip) filters.push('hflip');
   if (options.crop) filters.push('scale=1.1*iw:-1,crop=iw/1.1:ih/1.1');
@@ -325,25 +343,30 @@ async function handleVideoRemake(event, { inputPath, options }) {
 
   const speed = options.speed || 1.05;
 
-  // Xây dựng chuỗi filter cho FFmpeg
-  let vFilters = filters.length > 0 ? filters : [];
-
-  let vFilterStr = vFilters.length > 0 ? vFilters.join(',') : 'copy';
-  if (vFilterStr !== 'copy') vFilterStr = `[0:v]${vFilterStr},setpts=PTS/${speed}[v]`;
-  else vFilterStr = `[0:v]setpts=PTS/${speed}[v]`;
-
-  let command = '';
-
-  // --- LOGIC GẮN MỐC THỜI GIAN (SRT TIMESTAMPS) ---
-  const vFilterStrFinal = vFilterStr !== 'copy' ? vFilterStr : '[0:v]copy[v]';
   const relInput = path.join('..', path.basename(inputPath));
   const relOutput = path.join('..', path.basename(outputPath));
 
+  let filterComplexParts = [];
+  let mapArgs = [];
+
+  // 1. Xử lý luồng Video (nếu có)
+  if (hasVideo) {
+    let vFilters = filters.length > 0 ? filters : [];
+    let vFilterStr = vFilters.length > 0 ? vFilters.join(',') : 'copy';
+    if (vFilterStr !== 'copy') {
+      vFilterStr = `[0:v]${vFilterStr},setpts=PTS/${speed}[v]`;
+    } else {
+      vFilterStr = `[0:v]setpts=PTS/${speed}[v]`;
+    }
+    filterComplexParts.push(vFilterStr);
+    mapArgs.push('-map "[v]"');
+  }
+
+  // 2. Xử lý luồng Audio (nếu có hoặc có âm thanh ngoài chèn thêm)
   const externalAudioList = options.externalAudioList || [];
+  let inputStr = `ffmpeg -i "${relInput}" `;
 
   if (externalAudioList.length > 0) {
-    // Xây dựng chuỗi lệnh nạp tất cả các file audio
-    let inputStr = `ffmpeg -i "${relInput}" `;
     let filterParts = [];
     let mixInputs = '';
 
@@ -359,26 +382,45 @@ async function handleVideoRemake(event, { inputPath, options }) {
       const streamIdx = index + 1;
       // Áp dụng bộ lọc adelay với :all=1 để tự động delay toàn bộ channel (tương thích cả mono và stereo)
       // Ép định dạng stereo qua aformat để khớp 100% với âm thanh nền, tránh việc amix bỏ qua hoặc làm mất tiếng mono
-      filterParts.push(`[${streamIdx}:a]adelay=${delayMs}:all=1,volume=1.5,aformat=channel_layouts=stereo[a${streamIdx}]`);
-      mixInputs += `[a${streamIdx}]`;
+      const outLabel = (externalAudioList.length === 1 && !hasAudio) ? '[a]' : `[a${streamIdx}]`;
+      filterParts.push(`[${streamIdx}:a]adelay=${delayMs}:all=1,volume=1.5,aformat=channel_layouts=stereo${outLabel}`);
+      mixInputs += outLabel;
     });
 
-    // Xử lý âm thanh gốc: giảm âm lượng xuống 10% (0.1) và đồng bộ tốc độ
-    filterParts.push(`[0:a]atempo=${speed},volume=0.1[bg_a]`);
+    if (hasAudio) {
+      // Xử lý âm thanh gốc: giảm âm lượng xuống 10% (0.1) và đồng bộ tốc độ
+      filterParts.push(`[0:a]atempo=${speed},volume=0.1[bg_a]`);
+      // Trộn tất cả lại: âm thanh gốc + các file voice (Tắt tự động giảm âm lượng normalize=0)
+      // Số lượng input = số file voice + 1 (âm thanh gốc)
+      const totalInputs = externalAudioList.length + 1;
+      filterParts.push(`[bg_a]${mixInputs}amix=inputs=${totalInputs}:duration=first:normalize=0[a]`);
+    } else {
+      const totalInputs = externalAudioList.length;
+      if (totalInputs > 1) {
+        filterParts.push(`${mixInputs}amix=inputs=${totalInputs}:duration=first:normalize=0[a]`);
+      }
+    }
 
-    // Trộn tất cả lại: âm thanh gốc + các file voice (Tắt tự động giảm âm lượng normalize=0)
-    // Số lượng input = số file voice + 1 (âm thanh gốc)
-    const totalInputs = externalAudioList.length + 1;
-    filterParts.push(`[bg_a]${mixInputs}amix=inputs=${totalInputs}:duration=first:normalize=0[a]`);
-
-    const filterStr = `${vFilterStrFinal};${filterParts.join(';')}`;
-    command = `${inputStr} -filter_complex "${filterStr}" -map "[v]" -map "[a]" -c:v libx264 -preset superfast -y "${relOutput}"`;
+    filterComplexParts.push(...filterParts);
+    mapArgs.push('-map "[a]"');
   } else if (hasAudio) {
-    const aFilter = `[0:a]atempo=${speed}[a]`;
-    command = `ffmpeg -i "${relInput}" -filter_complex "${vFilterStrFinal};${aFilter}" -map "[v]" -map "[a]" -c:v libx264 -preset superfast -y "${relOutput}"`;
-  } else {
-    command = `ffmpeg -i "${relInput}" -filter_complex "${vFilterStrFinal}" -map "[v]" -c:v libx264 -preset superfast -y "${relOutput}"`;
+    filterComplexParts.push(`[0:a]atempo=${speed}[a]`);
+    mapArgs.push('-map "[a]"');
   }
+
+  // 3. Xây dựng lệnh FFmpeg hoàn chỉnh
+  const filterComplexStr = filterComplexParts.join(';');
+  let commandArgs = [];
+  if (filterComplexStr) {
+    commandArgs.push(`-filter_complex "${filterComplexStr}"`);
+  }
+  commandArgs.push(...mapArgs);
+
+  if (hasVideo) {
+    commandArgs.push('-c:v libx264 -preset superfast');
+  }
+
+  const command = `${inputStr} ${commandArgs.join(' ')} -y "${relOutput}"`;
 
   // Chạy lệnh đồng bộ bằng Promisify để phẳng code hoàn toàn
   try {
