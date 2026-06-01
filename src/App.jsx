@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react';
 import { Tabs, Button } from 'antd';
 import TextToSpeed from './routes/TextToSpeed/TextToSpeed';
 import AutoClick from './routes/AutoClick/AutoClick';
-import AIVideoCreator from './routes/AIVideoCreator/AIVideoCreator';
 import VideoRemaker from './routes/VideoRemaker/VideoRemaker';
+import MediaEnhancer from './routes/MediaEnhancer/MediaEnhancer';
+import VideoSubExtractor from './routes/VideoSubExtractor/VideoSubExtractor';
 import SettingsModal from './components/Setting/SettingsModal';
-import { SoundOutlined, SettingOutlined, ThunderboltOutlined, VideoCameraOutlined, PlayCircleOutlined } from '@ant-design/icons';
+import { SoundOutlined, SettingOutlined, ThunderboltOutlined, PlayCircleOutlined, PictureOutlined, FileTextOutlined } from '@ant-design/icons';
 
 const App = () => {
   const [showSettings, setShowSettings] = useState(false);
@@ -48,19 +49,28 @@ const App = () => {
       key: '3',
       label: (
         <span>
-          <VideoCameraOutlined /> Video AI
+          <PlayCircleOutlined /> Video Remaker
         </span>
       ),
-      children: <AIVideoCreator settings={settings} />,
+      children: <VideoRemaker settings={settings} />,
     },
     {
       key: '4',
       label: (
         <span>
-          <PlayCircleOutlined /> Video Remaker
+          <PictureOutlined /> Làm nét Ảnh/Video
         </span>
       ),
-      children: <VideoRemaker settings={settings} />,
+      children: <MediaEnhancer />,
+    },
+    {
+      key: '5',
+      label: (
+        <span>
+          <FileTextOutlined /> Trích xuất Phụ đề (OCR)
+        </span>
+      ),
+      children: <VideoSubExtractor />,
     },
   ];
 

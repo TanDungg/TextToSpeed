@@ -41,6 +41,12 @@ contextBridge.exposeInMainWorld('electron', {
   showItemInFolder: (filePath) => {
     return ipcRenderer.invoke('show-item-in-folder', { filePath });
   },
+  selectFile: (type) => {
+    return ipcRenderer.invoke('select-file', { type });
+  },
+  mediaEnhance: (inputPath, type, options) => {
+    return ipcRenderer.invoke('media-enhance', { inputPath, type, options });
+  },
   on: (channel, func) => {
     // Các kênh được phép lắng nghe
     const validChannels = ['autoclick-status-changed'];

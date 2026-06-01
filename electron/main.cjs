@@ -1,7 +1,12 @@
-const { app, BrowserWindow, ipcMain, globalShortcut, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, globalShortcut, Menu, protocol } = require('electron');
 const path = require('path');
 const { exec } = require('child_process');
 const axios = require('axios');
+
+// Register the media protocol as secure, standard, supporting fetch, streaming, and CORS
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'media', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } }
+]);
 
 const isDev = !app.isPackaged;
 let mainWindow;
@@ -82,6 +87,26 @@ function stopClicking() {
 }
 
 app.whenReady().then(() => {
+  // Register a custom protocol to safely load local media files in the renderer
+  protocol.handle('media', (request) => {
+    const { net } = require('electron');
+    const { pathToFileURL } = require('url');
+    // Extract local file path from media:// URL
+    const urlPath = request.url.replace('media://', '');
+    let decodedPath = decodeURIComponent(urlPath);
+    
+    // Restore the Windows drive colon if stripped by Chromium's URL parser (e.g. 'd/' -> 'd:/')
+    if (/^[a-zA-Z]\//.test(decodedPath)) {
+      decodedPath = decodedPath[0] + ':' + decodedPath.slice(1);
+    }
+    
+    try {
+      return net.fetch(pathToFileURL(decodedPath).toString());
+    } catch (err) {
+      console.error('Failed to stream local file via media protocol:', err);
+    }
+  });
+
   createWindow();
 
   // Thiết lập Menu mặc định cho ứng dụng
@@ -572,6 +597,173 @@ ipcMain.handle('check-env', async () => {
     ytdlp: hasYtdlp,
   };
 });
+
+ipcMain.handle('select-file', async (event, { type }) => {
+  const { dialog } = require('electron');
+  const filters = type === 'image'
+    ? [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp'] }]
+    : type === 'video'
+      ? [{ name: 'Videos', extensions: ['mp4', 'mkv', 'avi', 'mov', 'webm'] }]
+      : [{ name: 'Media', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'mp4', 'mkv', 'avi', 'mov', 'webm'] }];
+
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile'],
+    filters: filters
+  });
+  return result;
+});
+
+ipcMain.handle('media-enhance', async (event, { inputPath, type, options }) => {
+  const fs = require('fs');
+  const util = require('util');
+  const { exec } = require('child_process');
+  const execAsync = util.promisify(exec);
+
+  const ext = path.extname(inputPath);
+  const tempDir = path.join(app.getPath('downloads'), 'SmartRemaker', 'enhanced');
+  if (!fs.existsSync(tempDir)) {
+    fs.mkdirSync(tempDir, { recursive: true });
+  }
+
+  const outputPath = path.join(tempDir, `enhanced_${Date.now()}${ext}`);
+
+  // Detect if the video/image is vertical (height > width)
+  let isVertical = false;
+  try {
+    const { execSync } = require('child_process');
+    const dimensions = execSync(
+      `ffprobe -v error -select_streams v -show_entries stream=width,height -of csv=p=0 "${inputPath}"`
+    )
+      .toString()
+      .trim();
+    const [w, h] = dimensions.split(',').map(Number);
+    isVertical = h > w;
+  } catch (e) {
+    console.warn('Failed to check dimensions via ffprobe, falling back:', e.message);
+  }
+
+  // Build FFmpeg filter complex
+  let filters = [];
+  
+  // 1. Denoise (using adjustable strength)
+  if (options.denoise && options.denoise > 0) {
+    const lSpatial = (4.0 * options.denoise).toFixed(1);
+    const cSpatial = (3.0 * options.denoise).toFixed(1);
+    const lTmp = (6.0 * options.denoise).toFixed(1);
+    const cTmp = (4.5 * options.denoise).toFixed(1);
+    filters.push(`hqdn3d=${lSpatial}:${cSpatial}:${lTmp}:${cTmp}`);
+  }
+
+  // 2. Scale (upscaling to 1080p, 2K, or 4K with auto-adaptive horizontal/vertical matching)
+  if (options.resolution && options.resolution !== 'original') {
+    let targetWidth = 1920;
+    let targetHeight = 1080;
+    
+    if (options.resolution === '2k') {
+      targetWidth = isVertical ? 1440 : 2560;
+      targetHeight = isVertical ? 2560 : 1440;
+    } else if (options.resolution === '4k') {
+      targetWidth = isVertical ? 2160 : 3840;
+      targetHeight = isVertical ? 3840 : 2160;
+    } else if (options.resolution === '1080p') {
+      targetWidth = isVertical ? 1080 : 1920;
+      targetHeight = isVertical ? 1920 : 1080;
+    }
+    
+    filters.push(`scale='if(gte(iw,ih),${targetWidth},-2)':'if(gte(iw,ih),-2,${targetHeight})':flags=lanczos`);
+  } else if (options.scale && options.scale > 1.0) {
+    // Fallback for old options compatibility
+    filters.push(`scale='trunc(iw*${options.scale}/2)*2':'trunc(ih*${options.scale}/2)*2':flags=lanczos`);
+  }
+
+  // 3. Sharpen (unsharp) - Upgraded to dual-stage multi-scale sharpening for phenomenal clarity and detail definition
+  if (options.sharpenAmount && options.sharpenAmount > 0) {
+    const amount1 = Math.min(1.5, options.sharpenAmount * 0.8).toFixed(2);
+    const amount2 = Math.min(1.5, options.sharpenAmount * 1.2).toFixed(2);
+    
+    let matrixSize = 7; // Default 7x7 for 1080p and original
+    if (options.resolution === '4k') {
+      matrixSize = 11; // 11x11 matrix for 4K outlines
+    } else if (options.resolution === '2k') {
+      matrixSize = 9;  // 9x9 matrix for 2K outlines
+    }
+    
+    // Stage 1: Fine-scale matrix (5x5) for high-frequency details (hair, textures)
+    filters.push(`unsharp=5:5:${amount1}:5:5:0.0`);
+    // Stage 2: Medium-scale matrix (7x7 / 9x9 / 11x11) for structural edges and outlines
+    filters.push(`unsharp=${matrixSize}:${matrixSize}:${amount2}:${matrixSize}:${matrixSize}:0.0`);
+  }
+
+  // 4. Color / Contrast / Brightness / Saturation
+  if (
+    (options.contrast !== undefined && options.contrast !== 1.0) ||
+    (options.brightness !== undefined && options.brightness !== 0.0) ||
+    (options.saturation !== undefined && options.saturation !== 1.0)
+  ) {
+    const contrast = options.contrast !== undefined ? options.contrast : 1.0;
+    const brightness = options.brightness !== undefined ? options.brightness : 0.0;
+    const saturation = options.saturation !== undefined ? options.saturation : 1.0;
+    filters.push(`eq=contrast=${contrast}:brightness=${brightness}:saturation=${saturation}`);
+  }
+
+  let filterStr = filters.join(',');
+
+  // Check if video has an audio stream
+  let hasAudio = false;
+  if (type === 'video') {
+    try {
+      const { execSync } = require('child_process');
+      const audioCheck = execSync(
+        `ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 "${inputPath}"`
+      )
+        .toString()
+        .trim();
+      hasAudio = audioCheck !== '';
+    } catch (e) {
+      console.warn('Failed to check audio streams:', e.message);
+    }
+  }
+
+  let command = '';
+  const audioArg = hasAudio ? '-c:a copy' : '-an';
+
+  if (type === 'image') {
+    if (filterStr) {
+      command = `ffmpeg -loglevel error -i "${inputPath}" -vf "${filterStr}" -y "${outputPath}"`;
+    } else {
+      command = `ffmpeg -loglevel error -i "${inputPath}" -y "${outputPath}"`;
+    }
+  } else {
+    // Video processing
+    if (filterStr) {
+      command = `ffmpeg -loglevel error -i "${inputPath}" -vf "${filterStr}" -c:v libx264 -preset superfast ${audioArg} -y "${outputPath}"`;
+    } else {
+      command = `ffmpeg -loglevel error -i "${inputPath}" -c:v copy ${audioArg} -y "${outputPath}"`;
+    }
+  }
+
+  try {
+    // Run FFmpeg with extended buffer (50MB) and suppressed progress logs (-loglevel error)
+    await execAsync(command, { maxBuffer: 1024 * 1024 * 50 });
+    if (fs.existsSync(outputPath)) {
+      return { ok: true, path: outputPath };
+    } else {
+      return { ok: false, error: 'Không thể tạo file đầu ra. Vui lòng thử lại.' };
+    }
+  } catch (error) {
+    console.error('Enhancement error:', error.message);
+    const isNotFound =
+      error.message.toLowerCase().includes('not recognized') ||
+      error.message.toLowerCase().includes('not found');
+    return {
+      ok: false,
+      error: isNotFound
+        ? 'Vui lòng cài đặt FFmpeg và thêm vào PATH để sử dụng tính năng này.'
+        : `Lỗi FFmpeg: ${error.message}`
+    };
+  }
+});
+
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
