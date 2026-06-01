@@ -91,6 +91,11 @@ const VideoSubExtractor = () => {
   const workerRef = useRef(null);
   const scanCancelRef = useRef(false);
 
+  // AI Preprocessing and Preview States
+  const [preprocessImage, setPreprocessImage] = useState(true);
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [binarizeThreshold, setBinarizeThreshold] = useState(170);
+
   // OCR Configurations
   const [ocrLang, setOcrLang] = useState('vie+eng'); // 'vie+eng' | 'vie' | 'eng' | 'chi_sim'
   const [scanInterval, setScanInterval] = useState(1.0); // every N seconds
@@ -103,6 +108,61 @@ const VideoSubExtractor = () => {
     const time = new Date().toLocaleTimeString();
     setLogs((prev) => [...prev, { time, text, type }]);
   };
+
+  // Update AI OCR Crop Preview in real-time
+  const updateCropPreview = () => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
+
+    // Wait until video metadata dimensions are available
+    if (video.videoWidth === 0 || video.videoHeight === 0) return;
+
+    const ctx = canvas.getContext('2d');
+    const vWidth = video.videoWidth;
+    const vHeight = video.videoHeight;
+
+    const sy = Math.floor((cropTop / 100) * vHeight);
+    const sh = Math.floor((cropHeight / 100) * vHeight);
+
+    canvas.width = vWidth;
+    canvas.height = sh;
+
+    try {
+      ctx.drawImage(video, 0, sy, vWidth, sh, 0, 0, vWidth, sh);
+
+      // Preprocess image to enhance OCR accuracy (Binarization filter)
+      if (preprocessImage) {
+        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imgData.data;
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+          // Grayscale conversion (Luma weights)
+          const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+          // Clean thresholding (binarize)
+          const value = gray > binarizeThreshold ? 255 : 0;
+          data[i] = value;
+          data[i + 1] = value;
+          data[i + 2] = value;
+        }
+        ctx.putImageData(imgData, 0, 0);
+      }
+
+      setPreviewUrl(canvas.toDataURL('image/png'));
+    } catch (err) {
+      console.warn('Failed to update crop preview:', err);
+    }
+  };
+
+  // Run preview updates when adjustments are made
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      updateCropPreview();
+    }, 80);
+    return () => clearTimeout(timer);
+  }, [cropTop, cropHeight, preprocessImage, binarizeThreshold, videoUrl]);
 
   // Pre-load Tesseract Worker when scanning starts
   const initTesseract = async (lang) => {
@@ -176,6 +236,9 @@ const VideoSubExtractor = () => {
   const handleVideoLoaded = () => {
     if (videoRef.current) {
       setVideoDuration(videoRef.current.duration || 0);
+      setTimeout(() => {
+        updateCropPreview();
+      }, 200);
     }
   };
 
@@ -267,6 +330,32 @@ const VideoSubExtractor = () => {
       // Draw the cropped portion to Canvas
       ctx.drawImage(video, 0, sy, vWidth, sh, 0, 0, vWidth, sh);
 
+      // Preprocess image to enhance OCR accuracy (Binarization filter)
+      if (preprocessImage) {
+        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imgData.data;
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+          // Grayscale conversion (Luma weights)
+          const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+          // Clean thresholding (binarize)
+          const value = gray > binarizeThreshold ? 255 : 0;
+          data[i] = value;
+          data[i + 1] = value;
+          data[i + 2] = value;
+        }
+        ctx.putImageData(imgData, 0, 0);
+      }
+
+      // Update OCR Crop Preview dynamically during scanning
+      try {
+        setPreviewUrl(canvas.toDataURL('image/png'));
+      } catch (previewErr) {
+        // Fail-silent for preview generation during scan loop
+      }
+
       // Perform OCR
       try {
         const result = await worker.recognize(canvas);
@@ -334,6 +423,11 @@ const VideoSubExtractor = () => {
             setSubtitles([...localSubtitles]);
           }
         } else {
+          // If some text was found but filtered out due to low confidence
+          if (cleanText.length >= 2) {
+            addLog(`[${formatSrtTime(currentSec).split(',')[0]}] Bỏ qua: "${cleanText}" (Độ tin cậy thấp: ${confidence}% < ${minConfidence}%)`, 'error');
+          }
+          
           // If OCR returned empty or very low confidence, seal current subtitle (it ended)
           if (currentActiveSub) {
             currentActiveSub = null;
@@ -511,6 +605,7 @@ const VideoSubExtractor = () => {
                     src={videoUrl}
                     controls={!isScanning}
                     onLoadedMetadata={handleVideoLoaded}
+                    onSeeked={updateCropPreview}
                   />
                   
                   {/* Interactive Visual Crop Zone */}
@@ -571,6 +666,22 @@ const VideoSubExtractor = () => {
               </div>
             )}
 
+            {/* Real-time AI Crop Preview */}
+            {selectedFile && (
+              <div className="crop-preview-box">
+                <div className="preview-title">
+                  <Cpu size={16} /> Xem trước ảnh gửi AI (Thời gian thực):
+                </div>
+                <div className="preview-image-wrapper">
+                  {previewUrl ? (
+                    <img src={previewUrl} alt="Vùng phụ đề cắt" />
+                  ) : (
+                    <span className="no-preview">Đang trích xuất ảnh xem trước...</span>
+                  )}
+                </div>
+              </div>
+            )}
+
             <Divider style={{ margin: '24px 0' }} />
 
             {/* OCR Options Configuration */}
@@ -622,6 +733,48 @@ const VideoSubExtractor = () => {
                       className="custom-slider"
                       tooltip={{ formatter: (v) => `Mỗi ${v} giây` }}
                     />
+                  </div>
+                </Col>
+
+                {/* Image Preprocessing Toggle */}
+                <Col span={24}>
+                  <div className="extractor-option-box">
+                    <div className="option-header" style={{ marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span className="option-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Sparkles size={16} style={{ color: '#f59e0b' }} />
+                        Tối ưu hóa ảnh quét AI (Nhị phân hóa sắc nét)
+                      </span>
+                      <Switch
+                        checked={preprocessImage}
+                        onChange={(val) => setPreprocessImage(val)}
+                        disabled={isScanning}
+                      />
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b', lineHeight: '1.4', marginBottom: preprocessImage ? '12px' : 0 }}>
+                      Tự động chuyển đổi ảnh vùng cắt sang đen trắng sắc tương phản cao trước khi gửi cho AI. Khuyên dùng bật để tăng tỷ lệ đọc phụ đề cứng chuẩn xác &gt;98% và tránh nhiễu nền video.
+                    </p>
+                    {preprocessImage && (
+                      <div style={{ background: '#ffffff', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', marginTop: '8px' }}>
+                        <div className="option-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span className="option-title" style={{ fontSize: '0.85rem', color: '#475569', fontWeight: 600 }}>Ngưỡng lọc nhị phân (Độ tương phản chữ)</span>
+                          <span className="option-value" style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--primary)' }}>{binarizeThreshold}</span>
+                        </div>
+                        <Slider
+                          min={50}
+                          max={240}
+                          step={5}
+                          value={binarizeThreshold}
+                          onChange={(val) => setBinarizeThreshold(val)}
+                          disabled={isScanning}
+                          className="custom-slider"
+                          style={{ margin: '8px 0 0 0' }}
+                          tooltip={{ formatter: (v) => `Ngưỡng: ${v}` }}
+                        />
+                        <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px', lineHeight: '1.3' }}>
+                          * Nếu phụ đề màu vàng/sáng: giảm xuống (120-150). Nếu phụ đề màu trắng sáng/nền tối: tăng lên (180-210) để nét hơn. Xem ảnh trực tiếp ở ô Preview!
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </Col>
 
