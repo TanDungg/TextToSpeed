@@ -764,6 +764,86 @@ ipcMain.handle('media-enhance', async (event, { inputPath, type, options }) => {
   }
 });
 
+ipcMain.handle('lofi-search-metadata', async (event, { url }) => {
+  const { exec } = require('child_process');
+  const util = require('util');
+  const execAsync = util.promisify(exec);
+
+  try {
+    const { stdout } = await execAsync(`yt-dlp --print "%(title)s|%(duration_string)s" --no-playlist "${url}"`);
+    const parts = stdout.trim().split('|');
+    if (parts.length >= 2) {
+      return { ok: true, title: parts[0], duration: parts[1] };
+    }
+    return { ok: true, title: stdout.trim() || 'Unknown Title', duration: '0:00' };
+  } catch (error) {
+    console.error('Lofi search metadata error:', error.message);
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle('lofi-search-beats', async (event, { key, bpm }) => {
+  const { exec } = require('child_process');
+  const util = require('util');
+  const execAsync = util.promisify(exec);
+
+  const query = `Lofi type beat ${key} ${bpm} bpm`;
+  try {
+    const { stdout } = await execAsync(`yt-dlp --print "%(title)s|%(id)s|%(duration_string)s" --no-playlist "ytsearch5:${query}"`);
+    const lines = stdout.trim().split('\n');
+    const results = lines.map(line => {
+      const parts = line.split('|');
+      if (parts.length >= 3) {
+        return {
+          title: parts[0],
+          id: parts[1],
+          url: `https://www.youtube.com/watch?v=${parts[1]}`,
+          duration: parts[2]
+        };
+      }
+      return null;
+    }).filter(Boolean);
+
+    return { ok: true, results };
+  } catch (error) {
+    console.error('Lofi search beats error:', error.message);
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle('lofi-download-pair', async (event, { url, beatUrl, title }) => {
+  const fs = require('fs');
+  const { exec } = require('child_process');
+  const util = require('util');
+  const execAsync = util.promisify(exec);
+
+  const cleanTitle = title.replace(/[/\\?%*:|"<>]/g, '-').trim();
+  const destDir = path.join(app.getPath('downloads'), 'LofiHelper', cleanTitle);
+
+  if (!fs.existsSync(destDir)) {
+    fs.mkdirSync(destDir, { recursive: true });
+  }
+
+  const originalPath = path.join(destDir, 'Original_Song.mp3');
+  const beatPath = path.join(destDir, 'Lofi_Beat.mp3');
+
+  try {
+    const cmdOriginal = `yt-dlp -x --audio-format mp3 --no-playlist -o "${originalPath}" "${url}"`;
+    await execAsync(cmdOriginal);
+
+    const cmdBeat = `yt-dlp -x --audio-format mp3 --no-playlist -o "${beatPath}" "${beatUrl}"`;
+    await execAsync(cmdBeat);
+
+    const { shell } = require('electron');
+    shell.openPath(destDir);
+
+    return { ok: true, destDir };
+  } catch (error) {
+    console.error('Lofi download pair error:', error.message);
+    return { ok: false, error: error.message };
+  }
+});
+
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();

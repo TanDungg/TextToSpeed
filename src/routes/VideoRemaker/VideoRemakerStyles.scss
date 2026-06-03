@@ -27,9 +27,9 @@
     background: #ffffff !important;
     border: 1px solid #e2e8f0 !important;
     color: #1e293b;
-    border-radius: 16px !important;
-    padding: 12px 16px;
-    font-size: 1.05rem !important;
+    border-radius: 10px !important;
+    padding: 8px 12px;
+    font-size: 0.95rem !important;
 
     &:focus,
     &:hover {
@@ -62,8 +62,8 @@
 
   .translate-settings {
     background: #f8fafc;
-    padding: 20px;
-    border-radius: 20px;
+    padding: 14px;
+    border-radius: 16px;
     border: 1px solid #e2e8f0;
   }
 
@@ -72,14 +72,14 @@
     justify-content: center;
 
     .process-btn {
-      height: 64px !important;
-      padding: 0 60px !important;
-      border-radius: 20px !important;
-      font-size: 1.1rem !important;
+      height: 48px !important;
+      padding: 0 40px !important;
+      border-radius: 12px !important;
+      font-size: 1rem !important;
       font-weight: 800 !important;
       background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%) !important;
       border: none !important;
-      box-shadow: 0 10px 20px rgba(99, 102, 241, 0.25) !important;
+      box-shadow: 0 6px 12px rgba(99, 102, 241, 0.25) !important;
       color: white !important;
 
       &:hover {
@@ -94,7 +94,7 @@
   }
 
   .progress-section {
-    margin-top: 32px;
+    margin-top: 16px;
     background: #f8fafc;
     padding: 20px;
     border-radius: 16px;
@@ -382,8 +382,8 @@
 
 .custom-select {
   .ant-select-selector {
-    border-radius: 12px !important;
-    height: 48px !important;
+    border-radius: 10px !important;
+    height: 40px !important;
     display: flex !important;
     align-items: center !important;
     background: #fff !important;

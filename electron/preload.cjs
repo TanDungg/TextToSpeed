@@ -47,6 +47,15 @@ contextBridge.exposeInMainWorld('electron', {
   mediaEnhance: (inputPath, type, options) => {
     return ipcRenderer.invoke('media-enhance', { inputPath, type, options });
   },
+  lofiSearchMetadata: (url) => {
+    return ipcRenderer.invoke('lofi-search-metadata', { url });
+  },
+  lofiSearchBeats: (key, bpm) => {
+    return ipcRenderer.invoke('lofi-search-beats', { key, bpm });
+  },
+  lofiDownloadPair: (url, beatUrl, title) => {
+    return ipcRenderer.invoke('lofi-download-pair', { url, beatUrl, title });
+  },
   on: (channel, func) => {
     // Các kênh được phép lắng nghe
     const validChannels = ['autoclick-status-changed'];
