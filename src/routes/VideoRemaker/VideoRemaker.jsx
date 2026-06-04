@@ -172,6 +172,7 @@ const VideoRemaker = ({ settings }) => {
     ttsVoice: 'vi-VN-HoaiMyNeural',
     ttsSpeed: 1.0, // Tốc độ giọng đọc riêng biệt
     reviewSrt: false, // Tùy chọn xem và sửa phụ đề trước khi lồng tiếng
+    remakeLevel: 'strong', // Cường độ lách bản quyền: normal (nhẹ) hoặc strong (mạnh - YT)
   });
   const [showSrtModal, setShowSrtModal] = useState(false);
   const [srtText, setSrtText] = useState('');
@@ -823,6 +824,22 @@ CHỈ trả về duy nhất chuỗi nội dung SRT thuần túy. Tuyệt đối 
                     <span>Lách bản quyền</span>
                   </div>
                   <div className="checkbox-group">
+                    <div style={{ marginBottom: 8 }}>
+                      <p style={{ marginBottom: 6, fontSize: 13, color: '#475569', fontWeight: 600 }}>
+                        Cường độ lách bản quyền:
+                      </p>
+                      <Select
+                        size="large"
+                        value={options.remakeLevel || 'strong'}
+                        style={{ width: '100%' }}
+                        onChange={(val) => setOptions({ ...options, remakeLevel: val })}
+                        options={[
+                          { value: 'normal', label: 'Lách nhẹ (Phù hợp TikTok, Reels, Facebook)' },
+                          { value: 'strong', label: 'Lách mạnh (Phù hợp YouTube Content ID)' },
+                        ]}
+                        className="custom-select"
+                      />
+                    </div>
                     <Checkbox
                       checked={options.flip}
                       onChange={(e) => setOptions({ ...options, flip: e.target.checked })}

@@ -56,7 +56,7 @@ const App = () => {
 
   // Các trạng thái bảo mật của hệ thống
   const [isAuthorized, setIsAuthorized] = useState(false);
-  const [authRequired, setAuthRequired] = useState(false);
+  const [authRequired, setAuthRequired] = useState(true);
   const [accessToken, setAccessToken] = useState(
     () => localStorage.getItem('token') || localStorage.getItem('access_token') || ''
   );

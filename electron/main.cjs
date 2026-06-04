@@ -361,10 +361,33 @@ async function handleVideoRemake(event, { inputPath, options }) {
     return { ok: false, error: 'File đầu vào không hợp lệ hoặc không chứa bất kỳ luồng âm thanh hoặc video nào.' };
   }
 
+  const isStrong = options.remakeLevel === 'strong';
   let filters = [];
   if (options.flip) filters.push('hflip');
-  if (options.colorShift) filters.push('hue=h=2:s=1.05,eq=contrast=1.03:brightness=0.01');
-  if (options.vignette) filters.push('vignette=pi/8');
+  
+  if (options.colorShift) {
+    if (isStrong) {
+      // LÁCH MẠNH (YouTube Content ID): Zoom nhẹ 4% (crop & scale) để phá tọa độ điểm ảnh, thay đổi hệ màu rõ hơn, thêm hạt nhiễu (noise grain) nhẹ
+      filters.push(
+        'crop=in_w*0.96:in_h*0.96,scale=in_w:in_h',
+        'hue=h=4:s=1.15',
+        'eq=contrast=1.08:brightness=0.02:saturation=1.15',
+        'noise=alls=5:allf=t'
+      );
+    } else {
+      // Lách thường (TikTok/FB)
+      filters.push('hue=h=2:s=1.05,eq=contrast=1.03:brightness=0.01');
+    }
+  }
+  
+  if (options.vignette) {
+    if (isStrong) {
+      // Góc tối rõ nét hơn
+      filters.push('vignette=PI/6');
+    } else {
+      filters.push('vignette=PI/8');
+    }
+  }
 
   const speed = options.speed || 1.05;
 
@@ -392,10 +415,20 @@ async function handleVideoRemake(event, { inputPath, options }) {
   let aFilters = [];
   aFilters.push(`atempo=${speed}`);
   if (options.audioPitch) {
-    aFilters.push('asetrate=44100*1.02', 'atempo=1/1.02');
+    if (isStrong) {
+      // Lách mạnh: Nâng tông giọng rõ hơn (+4%), thêm bộ tăng âm trầm/bổng (bass/treble EQ) để đổi tần số
+      aFilters.push('asetrate=44100*1.04', 'atempo=1/1.04', 'bass=g=3', 'treble=g=1.5');
+    } else {
+      aFilters.push('asetrate=44100*1.02', 'atempo=1/1.02');
+    }
   }
   if (options.audioDelay) {
-    aFilters.push('adelay=50|50', 'aecho=0.8:0.88:6:0.2');
+    if (isStrong) {
+      // Lách mạnh: Độ trễ lớn hơn (100ms) và tiếng vang rõ hơn (delay 25ms)
+      aFilters.push('adelay=100|100', 'aecho=0.8:0.85:25:0.25');
+    } else {
+      aFilters.push('adelay=50|50', 'aecho=0.8:0.88:6:0.2');
+    }
   }
   const aFilterStr = aFilters.join(',');
 
