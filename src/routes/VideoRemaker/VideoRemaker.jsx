@@ -38,7 +38,7 @@ if (typeof window !== 'undefined' && !window.electron) {
       try {
         const res = await fetch('/api/check-env');
         return await res.json();
-      } catch (err) {
+      } catch {
         return { ffmpeg: false, ytdlp: false };
       }
     },
@@ -164,7 +164,7 @@ const VideoRemaker = ({ settings }) => {
   const [history, setHistory] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('video_remake_history') || '[]');
-    } catch (e) {
+    } catch {
       return [];
     }
   });
