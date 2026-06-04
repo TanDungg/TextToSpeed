@@ -64,6 +64,11 @@
     display: flex;
     gap: 12px;
 
+    @media (max-width: 576px) {
+      flex-direction: column;
+      gap: 16px;
+    }
+
     .key-input,
     .bpm-input {
       flex: 1;

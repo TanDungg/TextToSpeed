@@ -692,7 +692,7 @@ const VideoSubExtractor = () => {
             <div className="settings-grid">
               <Row gutter={[20, 20]}>
                 {/* Language Picker */}
-                <Col xs={24} md={12}>
+                <Col span={24}>
                   <div className="extractor-option-box">
                     <div className="option-header">
                       <span className="option-title">Ngôn ngữ quét</span>
@@ -706,9 +706,9 @@ const VideoSubExtractor = () => {
                       onChange={(val) => setOcrLang(val)}
                       options={[
                         { label: 'Việt + Anh', value: 'vie+eng' },
-                        { label: 'Tiếng Việt', value: 'vie' },
-                        { label: 'Tiếng Anh', value: 'eng' },
-                        { label: 'Tiếng Trung', value: 'chi_sim' },
+                        { label: 'Việt', value: 'vie' },
+                        { label: 'Anh', value: 'eng' },
+                        { label: 'Trung', value: 'chi_sim' },
                       ]}
                       disabled={isScanning}
                       className="custom-segmented"
@@ -717,7 +717,7 @@ const VideoSubExtractor = () => {
                 </Col>
 
                 {/* Scan Speed/Interval */}
-                <Col xs={24} md={12}>
+                <Col span={24}>
                   <div className="extractor-option-box">
                     <div className="option-header">
                       <span className="option-title">Tần suất quét (Bước nhảy giây)</span>

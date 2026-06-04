@@ -72,23 +72,31 @@
     justify-content: center;
 
     .process-btn {
-      height: 48px !important;
-      padding: 0 40px !important;
-      border-radius: 12px !important;
-      font-size: 1rem !important;
+      height: 52px !important;
+      padding: 0 44px !important;
+      border-radius: 16px !important;
+      font-size: 1.05rem !important;
       font-weight: 800 !important;
+      letter-spacing: 0.03em !important;
       background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%) !important;
       border: none !important;
-      box-shadow: 0 6px 12px rgba(99, 102, 241, 0.25) !important;
       color: white !important;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+      box-shadow: 0 6px 12px -3px rgba(99, 102, 241, 0.4) !important;
 
       &:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 15px 30px rgba(99, 102, 241, 0.35) !important;
+        transform: scale(1.03) translateY(-3px);
+        box-shadow: 0 12px 20px -6px rgba(99, 102, 241, 0.5) !important;
       }
 
-      .spin {
-        animation: spin 2s linear infinite;
+      &:disabled {
+        background: #cbd5e1 !important;
+        box-shadow: none !important;
+        transform: none !important;
       }
     }
   }

@@ -155,6 +155,25 @@
   display: flex;
   gap: 12px;
   align-items: center;
+  flex-wrap: wrap;
+
+  @media (max-width: 576px) {
+    .tts-btn-play {
+      flex: 1 1 100% !important;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .tts-btn-stop,
+    .tts-btn-download,
+    .tts-btn-action {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+  }
 
   .tts-btn-play {
     flex: 1;

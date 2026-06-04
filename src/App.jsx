@@ -95,12 +95,12 @@ const App = () => {
       </header>
 
       {/* Drawer Backdrop overlay */}
-      {drawerOpen && (
-        <div className="drawer-backdrop" onClick={() => setDrawerOpen(false)}></div>
-      )}
+      {drawerOpen && <div className="drawer-backdrop" onClick={() => setDrawerOpen(false)}></div>}
 
       {/* Left Navigation Sidebar */}
-      <aside className={`app-sidebar ${collapsed ? 'collapsed' : ''} ${drawerOpen ? 'drawer-open' : ''}`}>
+      <aside
+        className={`app-sidebar ${collapsed ? 'collapsed' : ''} ${drawerOpen ? 'drawer-open' : ''}`}
+      >
         <div
           className="sidebar-logo"
           onClick={() => {

@@ -18,7 +18,6 @@ import {
   DownloadCloud,
   Languages,
   Settings2,
-  RotateCw,
   Zap,
   Info,
   ExternalLink,
@@ -31,6 +30,105 @@ import './VideoRemakerStyles.scss';
 import TTSProvider from '../../_service/TTSProvider';
 
 const { Title, Text } = Typography;
+
+// Polyfill window.electron on web browser/Hugging Face for seamless feature integration
+if (typeof window !== 'undefined' && !window.electron) {
+  window.electron = {
+    checkEnv: async () => {
+      try {
+        const res = await fetch('/api/check-env');
+        return await res.json();
+      } catch (err) {
+        return { ffmpeg: false, ytdlp: false };
+      }
+    },
+    videoDownload: async (url) => {
+      const response = await fetch('/api/video-download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        return { ok: false, error: err.error || 'Tải video từ Cloud thất bại.' };
+      }
+      return await response.json();
+    },
+    videoRemake: async (videoPath, options) => {
+      const response = await fetch('/api/video-remake', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoPath, options: JSON.stringify(options) }),
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        return { ok: false, error: err.error || 'Lách video thất bại trên Cloud.' };
+      }
+      return await response.json();
+    },
+    extractAudio: async (videoPath) => {
+      const response = await fetch('/api/extract-audio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoPath }),
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        return { ok: false, error: err.error || 'Trích xuất âm thanh từ Cloud thất bại.' };
+      }
+      return await response.json();
+    },
+    transcribeAudio: async (audioPath, apiKey) => {
+      const response = await fetch('/api/transcribe-audio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audioPath, apiKey }),
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        return { ok: false, error: err.error || 'Nhận diện giọng nói từ Cloud thất bại.' };
+      }
+      return await response.json();
+    },
+    readFileBase64: async (filePath) => {
+      const response = await fetch('/api/read-file-base64', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filePath }),
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        return { ok: false, error: err.error || 'Đọc file từ Cloud thất bại.' };
+      }
+      return await response.json();
+    },
+    ttsRequest: async (url, options = {}) => {
+      const response = await fetch('/api/tts-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, options }),
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        return { ok: false, error: err.error || 'Yêu cầu Proxy thất bại.' };
+      }
+      const result = await response.json();
+      if (result.ok && result.isBinary && typeof result.data === 'string') {
+        const binaryString = window.atob(result.data);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        result.data = bytes.buffer;
+      }
+      return result;
+    },
+    showItemInFolder: (filePath) => {
+      console.log('Mở thư mục chứa file:', filePath);
+      message.info(`File được lưu tại: ${filePath}`);
+    },
+  };
+}
 
 const convertVttToSrt = (vttText) => {
   if (!vttText) return '';
@@ -49,9 +147,10 @@ const VideoRemaker = ({ settings }) => {
   const [options, setOptions] = useState({
     flip: true,
     speed: 1.05,
-    crop: true,
-    grain: true,
-    blurBg: true,
+    colorShift: true,
+    vignette: true,
+    audioPitch: true,
+    audioDelay: true,
     translate: true,
     targetLang: 'vi',
     ttsServer: 'edge',
@@ -109,7 +208,21 @@ const VideoRemaker = ({ settings }) => {
     try {
       // Step 1: Download
       addLog('Đang tải video qua yt-dlp...', 'process');
-      const downloadRes = await window.electron.videoDownload(url);
+      let downloadRes;
+      if (window.electron) {
+        downloadRes = await window.electron.videoDownload(url);
+      } else {
+        const response = await fetch('/api/video-download', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }),
+        });
+        if (!response.ok) {
+          const errData = await response.json();
+          throw new Error(errData.error || 'Tải video từ Cloud thất bại.');
+        }
+        downloadRes = await response.json();
+      }
 
       if (!downloadRes.ok) {
         throw new Error(downloadRes.error);
@@ -133,7 +246,26 @@ const VideoRemaker = ({ settings }) => {
           ...options,
           translate: false, // Chỉ xử lý hình ảnh và tốc độ video ở Pass 1
         };
-        const firstRemakeRes = await window.electron.videoRemake(inputPath, firstRemakeOptions);
+
+        let firstRemakeRes;
+        if (window.electron) {
+          firstRemakeRes = await window.electron.videoRemake(inputPath, firstRemakeOptions);
+        } else {
+          const response = await fetch('/api/video-remake', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              videoPath: inputPath,
+              options: JSON.stringify(firstRemakeOptions),
+            }),
+          });
+          if (!response.ok) {
+            const errData = await response.json();
+            throw new Error(errData.error || 'Lách video thất bại trên Cloud.');
+          }
+          firstRemakeRes = await response.json();
+        }
+
         if (!firstRemakeRes.ok) {
           throw new Error(firstRemakeRes.error);
         }
@@ -225,10 +357,10 @@ const VideoRemaker = ({ settings }) => {
             translatedText = originalSrt;
           }
         } else {
-          // Fallback: Trích xuất audio gốc đã thay đổi tốc độ từ video remake Pass 1
-          addLog('Đang trích xuất âm thanh đã đổi tốc độ từ video remake...', 'process');
-          const extractRes = await window.electron.extractAudio(remakedNoVoicePath);
-          if (!extractRes.ok) throw new Error('Không thể trích xuất âm thanh từ video đã remake.');
+          // Trích xuất âm thanh từ video gốc (chưa đổi tốc độ)
+          addLog('Đang trích xuất âm thanh từ video gốc...', 'process');
+          const extractRes = await window.electron.extractAudio(inputPath);
+          if (!extractRes.ok) throw new Error('Không thể trích xuất âm thanh từ video gốc.');
 
           // 2 & 3. Chuyển âm thanh thành văn bản & Dịch thuật
           try {
@@ -431,7 +563,7 @@ CHỈ trả về duy nhất chuỗi nội dung SRT thuần túy. Tuyệt đối 
                 .trim();
 
               // Loại bỏ các âm thanh phụ trong ngoặc, ví dụ: (bright music), [Sparky barks]
-              const cleanText = text.replace(/[\(\[\{].*?[\)\]\}]/g, '').trim();
+              const cleanText = text.replace(/[([{].*?[)\]}]/g, '').trim();
 
               if (cleanText) {
                 result.push({ text: cleanText, startMs });
@@ -487,16 +619,28 @@ CHỈ trả về duy nhất chuỗi nội dung SRT thuần túy. Tuyệt đối 
               audioBlob = await TTSProvider.getGoogleAudioBlob(block.text, options.targetLang);
             }
 
-            const arrayBuffer = await audioBlob.arrayBuffer();
-            // Lưu tệp âm thanh tạm thời qua Main Process IPC và lấy đường dẫn lưu tệp
-            const audioPath = await window.electron.saveTempAudio(arrayBuffer);
+            let audioPath;
+            if (window.electron) {
+              const arrayBuffer = await audioBlob.arrayBuffer();
+              audioPath = await window.electron.saveTempAudio(arrayBuffer);
+            } else {
+              const formData = new FormData();
+              formData.append('file', audioBlob, `voice-${i}.mp3`);
+              const uploadRes = await fetch('/api/save-temp-audio', {
+                method: 'POST',
+                body: formData,
+              });
+              if (!uploadRes.ok) {
+                throw new Error('Không thể lưu file âm thanh tạm thời trên Cloud.');
+              }
+              const uploadData = await uploadRes.json();
+              audioPath = uploadData.path;
+            }
 
             // Tính toán thời gian bắt đầu chính xác:
-            // - Nếu dùng phụ đề YouTube gốc: Phải chia cho speed vì mốc thời gian là của video gốc.
-            // - Nếu dùng AI trích xuất từ video đã remake: Không chia vì mốc thời gian đã đổi sẵn theo tốc độ mới.
-            const finalStartMs = hasSubtitles
-              ? Math.round(block.startMs / options.speed)
-              : block.startMs;
+            // Luôn chia cho speed vì mốc thời gian phụ đề (dù từ YouTube gốc hay AI trích xuất từ video gốc)
+            // đều là của timeline video gốc.
+            const finalStartMs = Math.round(block.startMs / (options.speed || 1.0));
 
             externalAudioList.push({ path: audioPath, startMs: finalStartMs });
 
@@ -524,19 +668,53 @@ CHỈ trả về duy nhất chuỗi nội dung SRT thuần túy. Tuyệt đối 
         const finalRemakeOptions = {
           ...options,
           flip: false,
-          crop: false,
-          grain: false,
-          blurBg: false,
+          colorShift: false,
+          vignette: false,
+          audioPitch: false,
+          audioDelay: false,
           speed: 1.0, // Đặt là 1.0 vì video đã được lách & tăng tốc ở Pass 1 rồi
           externalAudioList: externalAudioList,
         };
 
-        remakeRes = await window.electron.videoRemake(remakedNoVoicePath, finalRemakeOptions);
+        if (window.electron) {
+          remakeRes = await window.electron.videoRemake(remakedNoVoicePath, finalRemakeOptions);
+        } else {
+          const response = await fetch('/api/video-remake', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              videoPath: remakedNoVoicePath,
+              options: JSON.stringify(finalRemakeOptions),
+            }),
+          });
+          if (!response.ok) {
+            const errData = await response.json();
+            throw new Error(errData.error || 'Trộn video lồng tiếng thất bại.');
+          }
+          remakeRes = await response.json();
+        }
       } else {
         // Chỉ chạy 1 Pass duy nhất lách bản quyền hình ảnh (nếu không dịch)
         setStatus('remaking');
         addLog('Đang tiến hành lách bản quyền & kết xuất video...', 'process');
-        remakeRes = await window.electron.videoRemake(inputPath, remakeOptions);
+
+        if (window.electron) {
+          remakeRes = await window.electron.videoRemake(inputPath, remakeOptions);
+        } else {
+          const response = await fetch('/api/video-remake', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              videoPath: inputPath,
+              options: JSON.stringify(remakeOptions),
+            }),
+          });
+          if (!response.ok) {
+            const errData = await response.json();
+            throw new Error(errData.error || 'Lách video thất bại trên Cloud.');
+          }
+          remakeRes = await response.json();
+        }
       }
 
       if (!remakeRes.ok) {
@@ -613,7 +791,7 @@ CHỈ trả về duy nhất chuỗi nội dung SRT thuần túy. Tuyệt đối 
               />
 
               <Row gutter={[24, 24]}>
-                <Col span={12}>
+                <Col span={24}>
                   <div className="section-label">
                     <Settings2 size={18} />
                     <span>Lách bản quyền</span>
@@ -623,29 +801,35 @@ CHỈ trả về duy nhất chuỗi nội dung SRT thuần túy. Tuyệt đối 
                       checked={options.flip}
                       onChange={(e) => setOptions({ ...options, flip: e.target.checked })}
                     >
-                      Lật ngang video
+                      Lật ngang video (Mirroring)
                     </Checkbox>
                     <Checkbox
-                      checked={options.crop}
-                      onChange={(e) => setOptions({ ...options, crop: e.target.checked })}
+                      checked={options.colorShift}
+                      onChange={(e) => setOptions({ ...options, colorShift: e.target.checked })}
                     >
-                      Tự động Crop & Zoom
+                      Thay đổi hệ màu (Color Shift)
                     </Checkbox>
                     <Checkbox
-                      checked={options.grain}
-                      onChange={(e) => setOptions({ ...options, grain: e.target.checked })}
+                      checked={options.vignette}
+                      onChange={(e) => setOptions({ ...options, vignette: e.target.checked })}
                     >
-                      Thêm nhiễu hạt
+                      Hiệu ứng góc tối (Vignette)
                     </Checkbox>
                     <Checkbox
-                      checked={options.blurBg}
-                      onChange={(e) => setOptions({ ...options, blurBg: e.target.checked })}
+                      checked={options.audioPitch}
+                      onChange={(e) => setOptions({ ...options, audioPitch: e.target.checked })}
                     >
-                      Làm mờ nền
+                      Thay đổi âm thông (Audio Pitch 2%)
+                    </Checkbox>
+                    <Checkbox
+                      checked={options.audioDelay}
+                      onChange={(e) => setOptions({ ...options, audioDelay: e.target.checked })}
+                    >
+                      Độ trễ âm thanh & tiếng vang (Delay & Echo)
                     </Checkbox>
                   </div>
                 </Col>
-                <Col span={12}>
+                <Col span={24}>
                   <div className="section-label">
                     <Languages size={18} />
                     <span>Dịch & Tốc độ</span>
@@ -786,7 +970,7 @@ CHỈ trả về duy nhất chuỗi nội dung SRT thuần túy. Tuyệt đối 
                 <Button
                   type="primary"
                   size="large"
-                  icon={<RotateCw size={18} className={loading ? 'spin' : ''} />}
+                  icon={!loading && <Zap size={18} />}
                   onClick={handleStart}
                   loading={loading}
                   className="process-btn"

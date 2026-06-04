@@ -35,7 +35,11 @@
 .history-modal-content {
   max-height: 60vh;
   overflow-y: auto;
-  padding: 32px;
+  padding: 16px;
+
+  @media (min-width: 576px) {
+    padding: 32px;
+  }
 
   &::-webkit-scrollbar {
     width: 6px;
@@ -128,6 +132,13 @@
     margin-top: 12px;
     padding-top: 12px;
     border-top: 1px dashed #f1f5f9;
+    flex-wrap: wrap;
+    gap: 8px;
+
+    @media (max-width: 480px) {
+      flex-direction: column;
+      align-items: stretch;
+    }
 
     .params {
       display: flex;
@@ -135,6 +146,11 @@
       font-size: 0.8rem;
       color: #94a3b8;
       font-weight: 500;
+
+      @media (max-width: 480px) {
+        justify-content: center;
+        margin-bottom: 4px;
+      }
     }
 
     .reuse-btn {
@@ -155,6 +171,14 @@
       &:hover {
         transform: translateY(-1px);
         box-shadow: 0 10px 15px -3px rgba(99, 102, 241, 0.3) !important;
+      }
+    }
+
+    & > div {
+      @media (max-width: 480px) {
+        display: flex;
+        justify-content: center;
+        width: 100%;
       }
     }
   }

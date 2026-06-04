@@ -45,7 +45,7 @@ const MediaEnhancer = () => {
     sharpenAmount: 1.2, // 0.0 to 2.0 (default 1.2 is extremely crisp)
     denoise: 0.0, // 0.0 to 2.0 (0.0 means OFF by default to preserve raw details)
     resolution: 'original', // 'original' | '1080p' | '2k' | '4k'
-    scale: 1.0, 
+    scale: 1.0,
     contrast: 1.05,
     brightness: 0.0,
     saturation: 1.05,
@@ -65,48 +65,84 @@ const MediaEnhancer = () => {
   };
 
   const handleSelectFile = async (typeFilter) => {
-    if (!window.electron) {
-      message.error('Ứng dụng cần chạy trong Electron để duyệt file hệ thống.');
-      return;
-    }
+    if (window.electron) {
+      try {
+        const res = await window.electron.selectFile(typeFilter);
+        if (res.canceled || !res.filePaths || res.filePaths.length === 0) {
+          return;
+        }
 
-    try {
-      const res = await window.electron.selectFile(typeFilter);
-      if (res.canceled || !res.filePaths || res.filePaths.length === 0) {
-        return;
+        const filePath = res.filePaths[0];
+        const fileName = filePath.split(/[\\/]/).pop();
+        const extension = fileName.split('.').pop().toLowerCase();
+
+        const isImg = ['jpg', 'jpeg', 'png', 'webp', 'bmp'].includes(extension);
+        const isVid = ['mp4', 'mkv', 'avi', 'mov', 'webm'].includes(extension);
+
+        if (!isImg && !isVid) {
+          message.error('Định dạng tập tin không được hỗ trợ.');
+          return;
+        }
+
+        setSelectedFile({
+          name: fileName,
+          path: filePath,
+          type: isImg ? 'image' : 'video',
+          extension: extension,
+        });
+        setEnhancedFile(null);
+        setPreviewMode('original');
+
+        addLog(`Đã chọn tập tin: ${fileName}`, 'success');
+        message.success('Đã tải tập tin thành công!');
+      } catch (error) {
+        message.error('Không thể chọn tập tin: ' + error.message);
+      }
+    } else {
+      const input = document.createElement('input');
+      input.type = 'file';
+      if (typeFilter === 'video') {
+        input.accept = 'video/*';
+      } else if (typeFilter === 'image') {
+        input.accept = 'image/*';
+      } else {
+        input.accept = 'video/*,image/*';
       }
 
-      const filePath = res.filePaths[0];
-      const fileName = filePath.split(/[\\/]/).pop();
-      const extension = fileName.split('.').pop().toLowerCase();
-      
-      const isImg = ['jpg', 'jpeg', 'png', 'webp', 'bmp'].includes(extension);
-      const isVid = ['mp4', 'mkv', 'avi', 'mov', 'webm'].includes(extension);
+      input.onchange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
 
-      if (!isImg && !isVid) {
-        message.error('Định dạng tập tin không được hỗ trợ.');
-        return;
-      }
+        const fileName = file.name;
+        const extension = fileName.split('.').pop().toLowerCase();
+        const isImg = ['jpg', 'jpeg', 'png', 'webp', 'bmp'].includes(extension);
+        const isVid = ['mp4', 'mkv', 'avi', 'mov', 'webm'].includes(extension);
 
-      setSelectedFile({
-        name: fileName,
-        path: filePath,
-        type: isImg ? 'image' : 'video',
-        extension: extension,
-      });
-      setEnhancedFile(null);
-      setPreviewMode('original');
+        if (!isImg && !isVid) {
+          message.error('Định dạng tập tin không được hỗ trợ.');
+          return;
+        }
 
-      addLog(`Đã chọn tập tin: ${fileName}`, 'success');
-      message.success('Đã tải tập tin thành công!');
-    } catch (error) {
-      message.error('Không thể chọn tập tin: ' + error.message);
+        setSelectedFile({
+          name: fileName,
+          path: URL.createObjectURL(file),
+          type: isImg ? 'image' : 'video',
+          extension: extension,
+          fileObject: file,
+        });
+        setEnhancedFile(null);
+        setPreviewMode('original');
+
+        addLog(`Đã chọn tập tin: ${fileName}`, 'success');
+        message.success('Đã tải tập tin thành công!');
+      };
+      input.click();
     }
   };
 
   const handleResolutionChange = (val) => {
     let newOptions = { ...options, resolution: val };
-    
+
     if (val === 'original') {
       newOptions.sharpenAmount = 1.2;
       newOptions.denoise = 0.0;
@@ -128,11 +164,11 @@ const MediaEnhancer = () => {
     } else if (val === '4k') {
       newOptions.sharpenAmount = 1.6;
       newOptions.denoise = 0.3;
-      newOptions.contrast = 1.10;
+      newOptions.contrast = 1.1;
       newOptions.brightness = 0.0;
-      newOptions.saturation = 1.10;
+      newOptions.saturation = 1.1;
     }
-    
+
     setOptions(newOptions);
     message.info(`Đã tự động áp dụng cấu hình tối ưu cho độ phân giải ${val.toUpperCase()}!`);
   };
@@ -143,73 +179,127 @@ const MediaEnhancer = () => {
       return;
     }
 
-    if (!window.electron) {
-      message.error('Ứng dụng cần được chạy trong Electron.');
-      return;
-    }
-
     setLoading(true);
     setPercent(10);
     clearLogs();
     addLog('Bắt đầu quy trình làm nét...', 'process');
 
-    try {
-      // Step 1: Check environment
-      addLog('Đang kiểm tra môi trường xử lý (FFmpeg)...', 'process');
-      const env = await window.electron.checkEnv();
-      if (!env.ffmpeg) {
-        throw new Error('Không tìm thấy FFmpeg trong hệ thống của bạn.');
-      }
-      setPercent(30);
+    if (window.electron) {
+      try {
+        // Step 1: Check environment
+        addLog('Đang kiểm tra môi trường xử lý (FFmpeg)...', 'process');
+        const env = await window.electron.checkEnv();
+        if (!env.ffmpeg) {
+          throw new Error('Không tìm thấy FFmpeg trong hệ thống của bạn.');
+        }
+        setPercent(30);
 
-      // Step 2: Processing options log
-      addLog(`Thông số làm nét:
+        // Step 2: Processing options log
+        addLog(
+          `Thông số làm nét:
 - Độ sắc nét: ${options.sharpenAmount}
 - Khử nhiễu: ${options.denoise === 0 ? 'Tắt' : `${options.denoise.toFixed(1)}x`}
 - Độ phân giải: ${options.resolution.toUpperCase()}
 - Tương phản: ${options.contrast}
 - Độ sáng: ${options.brightness}
-- Độ bão hòa: ${options.saturation}`, 'process');
+- Độ bão hòa: ${options.saturation}`,
+          'process'
+        );
 
-      addLog('Đang tiến hành kết xuất và tối ưu hóa chất lượng bằng bộ lọc FFmpeg...', 'process');
-      setPercent(50);
+        addLog('Đang tiến hành kết xuất và tối ưu hóa chất lượng bằng bộ lọc FFmpeg...', 'process');
+        setPercent(50);
 
-      // Step 3: Run Enhancement
-      const result = await window.electron.mediaEnhance(
-        selectedFile.path,
-        selectedFile.type,
-        options
-      );
+        // Step 3: Run Enhancement
+        const result = await window.electron.mediaEnhance(
+          selectedFile.path,
+          selectedFile.type,
+          options
+        );
 
-      if (!result.ok) {
-        throw new Error(result.error || 'Quá trình làm nét thất bại.');
+        if (!result.ok) {
+          throw new Error(result.error || 'Quá trình làm nét thất bại.');
+        }
+
+        setPercent(100);
+        addLog(`Hoàn tất thành công! Tập tin được lưu tại: ${result.path}`, 'success');
+        message.success('Làm nét ảnh/video thành công!');
+
+        // Update preview to enhanced
+        setEnhancedFile(result.path);
+        setPreviewMode('enhanced');
+
+        // Add to history
+        const newHistoryItem = {
+          id: Date.now(),
+          name: selectedFile.name,
+          type: selectedFile.type,
+          inputPath: selectedFile.path,
+          outputPath: result.path,
+          time: new Date().toLocaleString(),
+        };
+        setHistory((prev) => [newHistoryItem, ...prev]);
+      } catch (error) {
+        addLog(`Lỗi: ${error.message}`, 'error');
+        message.error(error.message);
+        setPercent(0);
+      } finally {
+        setLoading(false);
       }
+    } else {
+      // Browser Cloud Path
+      try {
+        if (!selectedFile.fileObject) {
+          throw new Error('Không tìm thấy file để tải lên.');
+        }
+        setPercent(20);
+        addLog('Đang gửi tệp tin lên Cloud Server...', 'process');
 
-      setPercent(100);
-      addLog(`Hoàn tất thành công! Tập tin được lưu tại: ${result.path}`, 'success');
-      message.success('Làm nét ảnh/video thành công!');
+        const formData = new FormData();
+        formData.append('file', selectedFile.fileObject);
+        formData.append('type', selectedFile.type);
+        formData.append('options', JSON.stringify(options));
 
-      // Update preview to enhanced
-      setEnhancedFile(result.path);
-      setPreviewMode('enhanced');
+        setPercent(40);
+        addLog('Đang xử lý làm nét phương tiện trên Cloud Server (FFmpeg)...', 'process');
 
-      // Add to history
-      const newHistoryItem = {
-        id: Date.now(),
-        name: selectedFile.name,
-        type: selectedFile.type,
-        inputPath: selectedFile.path,
-        outputPath: result.path,
-        time: new Date().toLocaleString(),
-      };
-      setHistory((prev) => [newHistoryItem, ...prev]);
+        const response = await fetch('/api/media-enhance', {
+          method: 'POST',
+          body: formData,
+        });
 
-    } catch (error) {
-      addLog(`Lỗi: ${error.message}`, 'error');
-      message.error(error.message);
-      setPercent(0);
-    } finally {
-      setLoading(false);
+        if (!response.ok) {
+          const errData = await response.json();
+          throw new Error(errData.error || 'Server xử lý thất bại.');
+        }
+
+        const result = await response.json();
+        if (!result.ok) {
+          throw new Error(result.error || 'Quá trình làm nét thất bại.');
+        }
+
+        setPercent(100);
+        addLog('Hoàn tất thành công trên Cloud Server!', 'success');
+        message.success('Làm nét ảnh/video thành công!');
+
+        setEnhancedFile(result.url);
+        setPreviewMode('enhanced');
+
+        const newHistoryItem = {
+          id: Date.now(),
+          name: selectedFile.name,
+          type: selectedFile.type,
+          inputPath: selectedFile.path,
+          outputPath: result.url,
+          time: new Date().toLocaleString(),
+        };
+        setHistory((prev) => [newHistoryItem, ...prev]);
+      } catch (error) {
+        addLog(`Lỗi Cloud: ${error.message}`, 'error');
+        message.error(error.message);
+        setPercent(0);
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -222,6 +312,8 @@ const MediaEnhancer = () => {
     if (window.electron) {
       window.electron.showItemInFolder(filePath);
       message.success('Đã mở thư mục chứa tệp!');
+    } else {
+      window.open(filePath, '_blank');
     }
   };
 
@@ -240,10 +332,16 @@ const MediaEnhancer = () => {
 
   const getPreviewUrl = () => {
     if (previewMode === 'enhanced' && enhancedFile) {
-      return `media://${enhancedFile.replace(/\\/g, '/')}`;
+      if (window.electron) {
+        return `media://${enhancedFile.replace(/\\/g, '/')}`;
+      }
+      return enhancedFile;
     }
     if (selectedFile) {
-      return `media://${selectedFile.path.replace(/\\/g, '/')}`;
+      if (window.electron) {
+        return `media://${selectedFile.path.replace(/\\/g, '/')}`;
+      }
+      return selectedFile.path;
     }
     return '';
   };
@@ -275,7 +373,8 @@ const MediaEnhancer = () => {
                 <UploadCloud size={48} />
                 <div className="upload-title">Nhấp để chọn Ảnh / Video từ máy tính</div>
                 <div className="upload-desc">
-                  Hỗ trợ định dạng hình ảnh (PNG, JPG, WEBP, BMP) và video (MP4, MKV, AVI, MOV, WEBM)
+                  Hỗ trợ định dạng hình ảnh (PNG, JPG, WEBP, BMP) và video (MP4, MKV, AVI, MOV,
+                  WEBM)
                 </div>
               </div>
             ) : (
@@ -297,28 +396,47 @@ const MediaEnhancer = () => {
                 </div>
 
                 {enhancedFile && (
-                  <div className="preview-selector-wrapper" style={{ display: 'flex', justifyContent: 'center', marginBottom: '8px' }}>
+                  <div
+                    className="preview-selector-wrapper"
+                    style={{ display: 'flex', justifyContent: 'center', marginBottom: '8px' }}
+                  >
                     <Segmented
                       value={previewMode}
                       onChange={(val) => setPreviewMode(val)}
                       options={[
                         {
                           label: (
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 8px' }}>
+                            <span
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '0 8px',
+                              }}
+                            >
                               {selectedFile.type === 'image' ? 'Ảnh Gốc' : 'Video Gốc'}
                             </span>
                           ),
-                          value: 'original'
+                          value: 'original',
                         },
                         {
                           label: (
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 8px', color: '#10b981', fontWeight: 700 }}>
+                            <span
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '0 8px',
+                                color: '#10b981',
+                                fontWeight: 700,
+                              }}
+                            >
                               <Sparkles size={14} />
                               Đã Làm Nét ✨
                             </span>
                           ),
-                          value: 'enhanced'
-                        }
+                          value: 'enhanced',
+                        },
                       ]}
                       className="custom-segmented preview-segmented"
                       disabled={loading}
@@ -330,14 +448,26 @@ const MediaEnhancer = () => {
                   {selectedFile.type === 'image' ? (
                     <img key={previewMode} src={getPreviewUrl()} alt="Preview" />
                   ) : (
-                    <video key={previewMode} src={getPreviewUrl()} controls autoPlay={previewMode === 'enhanced'} />
+                    <video
+                      key={previewMode}
+                      src={getPreviewUrl()}
+                      controls
+                      autoPlay={previewMode === 'enhanced'}
+                    />
                   )}
                 </div>
 
                 <div className="file-details">
-                  <span className="detail-item">Định dạng: {selectedFile.extension.toUpperCase()}</span>
-                  <span className="detail-item">Kiểu: {selectedFile.type === 'image' ? 'Hình ảnh' : 'Video'}</span>
-                  <span className="detail-item">Đường dẫn: {previewMode === 'enhanced' && enhancedFile ? enhancedFile : selectedFile.path}</span>
+                  <span className="detail-item">
+                    Định dạng: {selectedFile.extension.toUpperCase()}
+                  </span>
+                  <span className="detail-item">
+                    Kiểu: {selectedFile.type === 'image' ? 'Hình ảnh' : 'Video'}
+                  </span>
+                  <span className="detail-item">
+                    Đường dẫn:{' '}
+                    {previewMode === 'enhanced' && enhancedFile ? enhancedFile : selectedFile.path}
+                  </span>
                 </div>
               </div>
             )}
@@ -372,19 +502,16 @@ const MediaEnhancer = () => {
                   <div className="enhance-option-box">
                     <div className="option-header">
                       <span className="option-title">Độ phân giải đầu ra (Super Resolution)</span>
-                      <span className="option-value" style={{ textTransform: 'uppercase', color: 'var(--primary)', fontWeight: 700 }}>
-                        {options.resolution === 'original' ? 'Giữ nguyên' : options.resolution}
-                      </span>
                     </div>
                     <Segmented
                       block
                       value={options.resolution}
                       onChange={handleResolutionChange}
                       options={[
-                        { label: 'Giữ nguyên (Gốc)', value: 'original' },
-                        { label: '1080p (Full HD)', value: '1080p' },
-                        { label: '2K (Siêu nét)', value: '2k' },
-                        { label: '4K (Cực nét Ultra HD)', value: '4k' },
+                        { label: 'Gốc', value: 'original' },
+                        { label: '1080p', value: '1080p' },
+                        { label: '2K', value: '2k' },
+                        { label: '4K', value: '4k' },
                       ]}
                       className="custom-segmented"
                       disabled={loading}
@@ -395,7 +522,10 @@ const MediaEnhancer = () => {
                 <Col xs={24} md={12}>
                   <div className="enhance-option-box">
                     <div className="option-header">
-                      <span className="option-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span
+                        className="option-title"
+                        style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                      >
                         <Cpu size={16} style={{ color: '#6366f1' }} />
                         Khử nhiễu
                       </span>
@@ -437,7 +567,9 @@ const MediaEnhancer = () => {
                   <div className="enhance-option-box">
                     <div className="option-header">
                       <span className="option-title">Độ sáng</span>
-                      <span className="option-value">{(options.brightness >= 0 ? '+' : '') + options.brightness.toFixed(2)}</span>
+                      <span className="option-value">
+                        {(options.brightness >= 0 ? '+' : '') + options.brightness.toFixed(2)}
+                      </span>
                     </div>
                     <Slider
                       min={-0.3}
@@ -485,10 +617,11 @@ const MediaEnhancer = () => {
               <Button
                 type="primary"
                 size="large"
-                disabled={!selectedFile || loading}
+                loading={loading}
+                disabled={!selectedFile}
                 onClick={handleEnhance}
                 className="enhance-btn"
-                icon={loading ? <ListRestart className="spin" size={20} /> : <Sparkles size={20} />}
+                icon={!loading && <Sparkles size={20} />}
               >
                 {loading ? 'ĐANG XỬ LÝ...' : 'BẮT ĐẦU LÀM NÉT'}
               </Button>
@@ -507,7 +640,8 @@ const MediaEnhancer = () => {
                   <div className="empty-logs">Chưa có hoạt động xử lý nào.</div>
                 ) : (
                   logs.map((log, index) => {
-                    const isSuccessPath = log.type === 'success' && log.text.includes('Tập tin được lưu tại:');
+                    const isSuccessPath =
+                      log.type === 'success' && log.text.includes('Tập tin được lưu tại:');
                     let displayContent = log.text;
                     let path = '';
                     if (isSuccessPath) {
@@ -517,21 +651,21 @@ const MediaEnhancer = () => {
                     }
 
                     return (
-                      <div 
-                        key={index} 
+                      <div
+                        key={index}
                         className={`log-item ${log.type} ${isSuccessPath ? 'clickable-log' : ''}`}
                         onClick={isSuccessPath ? () => handleOpenFolder(path) : undefined}
                       >
                         <span className="log-time">[{log.time}]</span>
                         {displayContent}
                         {isSuccessPath && (
-                          <span 
-                            style={{ 
-                              color: '#10b981', 
-                              textDecoration: 'underline', 
+                          <span
+                            style={{
+                              color: '#10b981',
+                              textDecoration: 'underline',
                               fontWeight: 600,
                               wordBreak: 'break-all',
-                              display: 'inline'
+                              display: 'inline',
                             }}
                           >
                             {path}
@@ -556,8 +690,8 @@ const MediaEnhancer = () => {
                   <div className="empty-history">Chưa có lịch sử làm nét.</div>
                 ) : (
                   history.map((item) => (
-                    <div 
-                      key={item.id} 
+                    <div
+                      key={item.id}
                       className="history-item clickable-history-item"
                       onClick={() => handleSelectHistoryItem(item)}
                       style={{ cursor: 'pointer' }}
@@ -566,9 +700,13 @@ const MediaEnhancer = () => {
                         <span className="history-time">{item.time}</span>
                         <span className="history-type">
                           {item.type === 'image' ? (
-                            <><FileImage size={12} /> Ảnh</>
+                            <>
+                              <FileImage size={12} /> Ảnh
+                            </>
                           ) : (
-                            <><Video size={12} /> Video</>
+                            <>
+                              <Video size={12} /> Video
+                            </>
                           )}
                         </span>
                       </div>

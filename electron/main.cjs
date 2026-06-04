@@ -363,8 +363,8 @@ async function handleVideoRemake(event, { inputPath, options }) {
 
   let filters = [];
   if (options.flip) filters.push('hflip');
-  if (options.crop) filters.push('scale=1.1*iw:-1,crop=iw/1.1:ih/1.1');
-  if (options.grain) filters.push('noise=alls=7:allf=t+u');
+  if (options.colorShift) filters.push('hue=h=2:s=1.05,eq=contrast=1.03:brightness=0.01');
+  if (options.vignette) filters.push('vignette=pi/8');
 
   const speed = options.speed || 1.05;
 
@@ -388,6 +388,17 @@ async function handleVideoRemake(event, { inputPath, options }) {
   }
 
   // 2. Xử lý luồng Audio (nếu có hoặc có âm thanh ngoài chèn thêm)
+  // Xây dựng chuỗi lọc âm thanh gốc để lách bản quyền nâng cao
+  let aFilters = [];
+  aFilters.push(`atempo=${speed}`);
+  if (options.audioPitch) {
+    aFilters.push('asetrate=44100*1.02', 'atempo=1/1.02');
+  }
+  if (options.audioDelay) {
+    aFilters.push('adelay=50|50', 'aecho=0.8:0.88:6:0.2');
+  }
+  const aFilterStr = aFilters.join(',');
+
   const externalAudioList = options.externalAudioList || [];
   let inputStr = `ffmpeg -i "${relInput}" `;
 
@@ -413,8 +424,8 @@ async function handleVideoRemake(event, { inputPath, options }) {
     });
 
     if (hasAudio) {
-      // Xử lý âm thanh gốc: giảm âm lượng xuống 10% (0.1) và đồng bộ tốc độ
-      filterParts.push(`[0:a]atempo=${speed},volume=0.1[bg_a]`);
+      // Xử lý âm thanh gốc: giảm âm lượng xuống 10% (0.1) và áp dụng các bộ lọc lách bản quyền âm thanh
+      filterParts.push(`[0:a]${aFilterStr},volume=0.1[bg_a]`);
       // Trộn tất cả lại: âm thanh gốc + các file voice (Tắt tự động giảm âm lượng normalize=0)
       // Số lượng input = số file voice + 1 (âm thanh gốc)
       const totalInputs = externalAudioList.length + 1;
@@ -429,7 +440,7 @@ async function handleVideoRemake(event, { inputPath, options }) {
     filterComplexParts.push(...filterParts);
     mapArgs.push('-map "[a]"');
   } else if (hasAudio) {
-    filterComplexParts.push(`[0:a]atempo=${speed}[a]`);
+    filterComplexParts.push(`[0:a]${aFilterStr}[a]`);
     mapArgs.push('-map "[a]"');
   }
 
