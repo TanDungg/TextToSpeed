@@ -127,6 +127,21 @@ if (typeof window !== 'undefined' && !window.electron) {
       console.log('Mở thư mục chứa file:', filePath);
       message.info(`File được lưu tại: ${filePath}`);
     },
+    isWebMock: true,
+    saveTempAudio: async (buffer) => {
+      const blob = new Blob([buffer], { type: 'audio/mpeg' });
+      const formData = new FormData();
+      formData.append('file', blob, `voice-${Date.now()}.mp3`);
+      const response = await fetch('/api/save-temp-audio', {
+        method: 'POST',
+        body: formData,
+      });
+      if (!response.ok) {
+        throw new Error('Không thể lưu file âm thanh tạm thời trên Cloud.');
+      }
+      const uploadData = await response.json();
+      return uploadData.path;
+    },
   };
 }
 
@@ -242,6 +257,13 @@ const VideoRemaker = ({ settings }) => {
         setStatus('remaking');
         addLog('Pass 1: Đang lách bản quyền & đổi tốc độ video gốc...', 'process');
 
+        const isWeb = !window.electron || window.electron.isWebMock;
+        const effectiveOpenAIKey = settings?.openaiKey || (isWeb ? 'SERVER_KEY' : '');
+        const effectiveGeminiKey = settings?.geminiKey || (isWeb ? 'SERVER_KEY' : '');
+        const effectiveGoogleKey = settings?.googleKey || (isWeb ? 'SERVER_KEY' : '');
+        const effectiveFptKey = settings?.fptKey || (isWeb ? 'SERVER_KEY' : '');
+        const effectiveElevenLabsKey = settings?.elevenLabsKey || (isWeb ? 'SERVER_KEY' : '');
+
         const firstRemakeOptions = {
           ...options,
           translate: false, // Chỉ xử lý hình ảnh và tốc độ video ở Pass 1
@@ -283,9 +305,9 @@ const VideoRemaker = ({ settings }) => {
           const originalSrt = convertVttToSrt(downloadRes.subContent);
 
           try {
-            if (settings?.openaiKey) {
-              const isGroq = settings.openaiKey.startsWith('gsk_');
-              const providerName = isGroq ? 'Groq' : 'OpenAI';
+            if (effectiveOpenAIKey) {
+              const isGroq = effectiveOpenAIKey.startsWith('gsk_');
+              const providerName = isGroq ? 'Groq' : (effectiveOpenAIKey === 'SERVER_KEY' ? 'Server OpenAI' : 'OpenAI');
               addLog(`Đang dịch phụ đề bằng AI của ${providerName}...`, 'process');
 
               const prompt = `Translate the following SRT subtitles to ${options.targetLang}. Keep the exact same SRT format, timestamps, and structure. Do NOT add any extra text outside the SRT block:\n\n${originalSrt}`;
@@ -301,7 +323,7 @@ const VideoRemaker = ({ settings }) => {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
-                  Authorization: `Bearer ${settings.openaiKey}`,
+                  Authorization: `Bearer ${effectiveOpenAIKey}`,
                 },
                 body: {
                   model: translateModel,
@@ -317,7 +339,7 @@ const VideoRemaker = ({ settings }) => {
               } else {
                 translatedText = originalSrt;
               }
-            } else if (settings?.geminiKey) {
+            } else if (effectiveGeminiKey) {
               addLog('Đang dịch phụ đề bằng Google Gemini 1.5 Flash (Free)...', 'process');
 
               const prompt = `Translate the following SRT subtitles to ${
@@ -328,7 +350,9 @@ const VideoRemaker = ({ settings }) => {
                     : 'Tiếng Trung'
               }. Keep the exact same SRT format, timestamps, and structure. Do NOT add any extra text, and do not wrap in markdown code blocks. Here is the SRT content:\n\n${originalSrt}`;
 
-              const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${settings.geminiKey}`;
+              const geminiUrl = effectiveGeminiKey === 'SERVER_KEY'
+                ? 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=SERVER_KEY'
+                : `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${effectiveGeminiKey}`;
 
               const response = await window.electron.ttsRequest(geminiUrl, {
                 method: 'POST',
@@ -364,9 +388,9 @@ const VideoRemaker = ({ settings }) => {
 
           // 2 & 3. Chuyển âm thanh thành văn bản & Dịch thuật
           try {
-            if (settings?.openaiKey) {
-              const isGroq = settings.openaiKey.startsWith('gsk_');
-              const providerName = isGroq ? 'Groq' : 'OpenAI';
+            if (effectiveOpenAIKey) {
+              const isGroq = effectiveOpenAIKey.startsWith('gsk_');
+              const providerName = isGroq ? 'Groq' : (effectiveOpenAIKey === 'SERVER_KEY' ? 'Server OpenAI' : 'OpenAI');
 
               addLog(
                 `Đang nhận diện giọng nói bằng AI Whisper của ${providerName} (SRT Format)...`,
@@ -374,7 +398,7 @@ const VideoRemaker = ({ settings }) => {
               );
               const sttRes = await window.electron.transcribeAudio(
                 extractRes.path,
-                settings.openaiKey
+                effectiveOpenAIKey
               );
 
               if (sttRes.ok) {
@@ -398,7 +422,7 @@ const VideoRemaker = ({ settings }) => {
                   method: 'POST',
                   headers: {
                     'Content-Type': 'application/json',
-                    Authorization: `Bearer ${settings.openaiKey}`,
+                    Authorization: `Bearer ${effectiveOpenAIKey}`,
                   },
                   body: {
                     model: translateModel,
@@ -421,7 +445,7 @@ const VideoRemaker = ({ settings }) => {
               } else {
                 throw new Error(sttRes.error);
               }
-            } else if (settings?.geminiKey) {
+            } else if (effectiveGeminiKey) {
               // Sử dụng Gemini 1.5 Flash để dịch & trích xuất phụ đề trực tiếp từ âm thanh (MIỄN PHÍ)
               addLog(
                 'Đang sử dụng Google Gemini 1.5 Flash để trích xuất & dịch phụ đề trực tiếp từ âm thanh (Free)...',
@@ -449,7 +473,9 @@ QUY TẮC BẮT BUỘC VỀ THỜI GIAN (RẤT QUAN TRỌNG):
 
 CHỈ trả về duy nhất chuỗi nội dung SRT thuần túy. Tuyệt đối không giải thích gì thêm, không bọc trong thẻ code markdown \`\`\`srt hay bất kỳ ký tự nào khác ngoài định dạng SRT.`;
 
-              const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${settings.geminiKey}`;
+              const geminiUrl = effectiveGeminiKey === 'SERVER_KEY'
+                ? 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=SERVER_KEY'
+                : `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${effectiveGeminiKey}`;
 
               const response = await window.electron.ttsRequest(geminiUrl, {
                 method: 'POST',
@@ -598,7 +624,7 @@ CHỈ trả về duy nhất chuỗi nội dung SRT thuần túy. Tuyệt đối 
               audioBlob = await TTSProvider.speakWithGoogleCloud(
                 block.text,
                 options.ttsVoice,
-                settings.googleKey,
+                effectiveGoogleKey,
                 0,
                 1.0 // Bỏ chọn tốc độ voice, dùng mặc định 1.0
               );
@@ -606,14 +632,14 @@ CHỈ trả về duy nhất chuỗi nội dung SRT thuần túy. Tuyệt đối 
               audioBlob = await TTSProvider.speakWithFPT(
                 block.text,
                 options.ttsVoice,
-                settings.fptKey,
+                effectiveFptKey,
                 0 // 0 tương ứng với tốc độ 1.0 của FPT
               );
             } else if (options.ttsServer === 'elevenlabs') {
               audioBlob = await TTSProvider.speakWithElevenLabs(
                 block.text,
                 options.ttsVoice,
-                settings.elevenLabsKey
+                effectiveElevenLabsKey
               );
             } else {
               audioBlob = await TTSProvider.getGoogleAudioBlob(block.text, options.targetLang);

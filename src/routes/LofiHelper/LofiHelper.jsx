@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Card, Input, Button, Progress, message, Tag, Typography, Divider } from 'antd';
+import { Card, Input, Button, Progress, message, Tag, Typography, Divider, Alert } from 'antd';
 import {
   PlayCircleOutlined,
   SearchOutlined,
@@ -12,6 +12,7 @@ import './LofiHelperStyles.scss';
 const { Text } = Typography;
 
 const LofiHelper = ({ settings }) => {
+  const isWeb = !window.electron || window.electron.isWebMock;
   const [url, setUrl] = useState('');
   const [title, setTitle] = useState('');
   const [duration, setDuration] = useState('');
@@ -33,6 +34,7 @@ const LofiHelper = ({ settings }) => {
   };
 
   const handleFetchMetadata = async () => {
+    if (isWeb) return;
     if (!url.trim()) {
       return message.warning('Vui lòng nhập đường dẫn liên kết bài hát!');
     }
@@ -131,6 +133,7 @@ Return ONLY a valid JSON object in the exact format: {"key": "A minor", "bpm": 1
   };
 
   const handleSearchBeats = async () => {
+    if (isWeb) return;
     if (!key || !targetBpm) {
       return message.warning('Vui lòng kiểm tra và nhập đầy đủ Tông (Key) và Nhịp độ Lofi (BPM)!');
     }
@@ -161,6 +164,7 @@ Return ONLY a valid JSON object in the exact format: {"key": "A minor", "bpm": 1
   };
 
   const handleDownloadPackage = async () => {
+    if (isWeb) return;
     if (!selectedBeat) {
       return message.warning('Vui lòng chọn một Lofi Beat từ danh sách trước!');
     }
@@ -211,6 +215,14 @@ Return ONLY a valid JSON object in the exact format: {"key": "A minor", "bpm": 1
         <div className="lofi-layout">
           {/* Main Panel */}
           <div className="lofi-main-content">
+            {isWeb && (
+              <Alert
+                message="Lưu ý: Tính năng Lofi Remix Helper yêu cầu ứng dụng chạy trên Electron Desktop để tự động tải xuống và đồng bộ hóa thư mục dự án cục bộ cho FL Studio."
+                type="warning"
+                showIcon
+                style={{ marginBottom: '16px' }}
+              />
+            )}
             <div className="input-section" style={{ display: 'flex', gap: '8px' }}>
               <Input
                 placeholder="Nhập đường dẫn bài hát YouTube, MP3..."
@@ -218,14 +230,14 @@ Return ONLY a valid JSON object in the exact format: {"key": "A minor", "bpm": 1
                 onChange={(e) => setUrl(e.target.value)}
                 className="custom-input"
                 style={{ flex: 1 }}
-                disabled={loadingMetadata || downloading}
+                disabled={loadingMetadata || downloading || isWeb}
               />
               <Button
                 type="primary"
                 icon={<SearchOutlined />}
                 onClick={handleFetchMetadata}
                 loading={loadingMetadata}
-                disabled={downloading}
+                disabled={downloading || isWeb}
                 className="action-btn search-beats-btn"
               >
                 Phân tích

@@ -65,7 +65,7 @@ const MediaEnhancer = () => {
   };
 
   const handleSelectFile = async (typeFilter) => {
-    if (window.electron) {
+    if (window.electron && !window.electron.isWebMock) {
       try {
         const res = await window.electron.selectFile(typeFilter);
         if (res.canceled || !res.filePaths || res.filePaths.length === 0) {
@@ -184,7 +184,7 @@ const MediaEnhancer = () => {
     clearLogs();
     addLog('Bắt đầu quy trình làm nét...', 'process');
 
-    if (window.electron) {
+    if (window.electron && !window.electron.isWebMock) {
       try {
         // Step 1: Check environment
         addLog('Đang kiểm tra môi trường xử lý (FFmpeg)...', 'process');
@@ -309,7 +309,7 @@ const MediaEnhancer = () => {
   };
 
   const handleOpenFolder = (filePath) => {
-    if (window.electron) {
+    if (window.electron && !window.electron.isWebMock) {
       window.electron.showItemInFolder(filePath);
       message.success('Đã mở thư mục chứa tệp!');
     } else {
@@ -332,13 +332,13 @@ const MediaEnhancer = () => {
 
   const getPreviewUrl = () => {
     if (previewMode === 'enhanced' && enhancedFile) {
-      if (window.electron) {
+      if (window.electron && !window.electron.isWebMock) {
         return `media://${enhancedFile.replace(/\\/g, '/')}`;
       }
       return enhancedFile;
     }
     if (selectedFile) {
-      if (window.electron) {
+      if (window.electron && !window.electron.isWebMock) {
         return `media://${selectedFile.path.replace(/\\/g, '/')}`;
       }
       return selectedFile.path;

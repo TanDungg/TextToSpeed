@@ -56,7 +56,11 @@ const SettingsModal = ({ open, onCancel, settings, onSave }) => {
           </Space>
         </Divider>
 
-        <Form.Item label="FPT.AI API Key" name="fptKey">
+        <Form.Item 
+          label="FPT.AI API Key" 
+          name="fptKey"
+          extra={<span style={{ fontSize: '11px', color: '#8c8c8c' }}>Để trống hoặc nhập 'SERVER_KEY' để sử dụng key cài sẵn trên Server</span>}
+        >
           <Input.Password placeholder="Dán API Key từ FPT.AI vào đây..." />
         </Form.Item>
         <Alert
@@ -76,14 +80,18 @@ const SettingsModal = ({ open, onCancel, settings, onSave }) => {
           showIcon
           style={{ marginBottom: '24px' }}
         />
-
+ 
         <Divider orientation="left">
           <Space>
             <KeyOutlined /> Cấu hình OpenAI / Groq (Tốc độ cao)
           </Space>
         </Divider>
-
-        <Form.Item label="OpenAI / Groq API Key" name="openaiKey">
+ 
+        <Form.Item 
+          label="OpenAI / Groq API Key" 
+          name="openaiKey"
+          extra={<span style={{ fontSize: '11px', color: '#8c8c8c' }}>Để trống hoặc nhập 'SERVER_KEY' để sử dụng key cài sẵn trên Server</span>}
+        >
           <Input.Password placeholder="Nhập sk-... hoặc gsk_..." />
         </Form.Item>
         <Alert
@@ -116,14 +124,18 @@ const SettingsModal = ({ open, onCancel, settings, onSave }) => {
           showIcon
           style={{ marginBottom: '24px' }}
         />
-
+ 
         <Divider orientation="left">
           <Space>
             <KeyOutlined /> Cấu hình Google Cloud Premium
           </Space>
         </Divider>
-
-        <Form.Item label="Google Cloud API Key" name="googleKey">
+ 
+        <Form.Item 
+          label="Google Cloud API Key" 
+          name="googleKey"
+          extra={<span style={{ fontSize: '11px', color: '#8c8c8c' }}>Để trống hoặc nhập 'SERVER_KEY' để sử dụng key cài sẵn trên Server</span>}
+        >
           <Input.Password placeholder="Nhập API Key Google Cloud..." />
         </Form.Item>
         <Alert
@@ -143,14 +155,18 @@ const SettingsModal = ({ open, onCancel, settings, onSave }) => {
           showIcon
           style={{ marginBottom: '24px' }}
         />
-
+ 
         <Divider orientation="left">
           <Space>
             <KeyOutlined /> Cấu hình Google Gemini (Miễn phí)
           </Space>
         </Divider>
-
-        <Form.Item label="Gemini API Key" name="geminiKey">
+ 
+        <Form.Item 
+          label="Gemini API Key" 
+          name="geminiKey"
+          extra={<span style={{ fontSize: '11px', color: '#8c8c8c' }}>Để trống hoặc nhập 'SERVER_KEY' để sử dụng key cài sẵn trên Server</span>}
+        >
           <Input.Password placeholder="Nhập Gemini API Key..." />
         </Form.Item>
         <Alert

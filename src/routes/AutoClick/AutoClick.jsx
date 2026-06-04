@@ -16,7 +16,7 @@ const AutoClick = () => {
   const [isActive, setIsActive] = useState(false);
 
   const toggleAutoClick = () => {
-    if (!window.electron) {
+    if (!window.electron || window.electron.isWebMock) {
         message.error("Ứng dụng cần được chạy trong Electron để sử dụng tính năng này.");
         return;
     }
@@ -34,7 +34,7 @@ const AutoClick = () => {
   };
 
   useEffect(() => {
-    if (window.electron) {
+    if (window.electron && !window.electron.isWebMock) {
         const removeListener = window.electron.on('autoclick-status-changed', (status) => {
             setIsActive(status);
         });

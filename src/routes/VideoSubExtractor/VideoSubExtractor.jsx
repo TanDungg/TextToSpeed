@@ -187,7 +187,7 @@ const VideoSubExtractor = () => {
   };
 
   const handleSelectVideo = async () => {
-    if (!window.electron) {
+    if (!window.electron || window.electron.isWebMock) {
       message.error('Ứng dụng cần chạy trong Electron để duyệt file hệ thống.');
       return;
     }
