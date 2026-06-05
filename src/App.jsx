@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Button } from 'antd';
+import { useAuth } from './_hook/useAuth';
 import { BASE_URL_API } from './constants/config';
 import TextToSpeed from './routes/TextToSpeed/TextToSpeed';
 import AutoClick from './routes/AutoClick/AutoClick';
@@ -54,149 +55,19 @@ const App = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
-  // Các trạng thái bảo mật của hệ thống
-  const [isAuthorized, setIsAuthorized] = useState(false);
-  const [authRequired, setAuthRequired] = useState(true);
-  const [accessToken, setAccessToken] = useState(
-    () => localStorage.getItem('token') || localStorage.getItem('access_token') || ''
-  );
-  const [authLoading, setAuthLoading] = useState(true);
-  const [emailOrUserName, setEmailOrUserName] = useState('');
-  const [password, setPassword] = useState('');
-  const [authError, setAuthError] = useState('');
-
-  useEffect(() => {
-    const verifyInitialToken = async () => {
-      const savedToken = localStorage.getItem('token') || localStorage.getItem('access_token') || '';
-      const isElectron = window.electron && !window.electron.isWebMock;
-
-      if (isElectron) {
-        if (!savedToken) {
-          setAuthRequired(true);
-          setIsAuthorized(false);
-          setAuthLoading(false);
-          return;
-        }
-
-        try {
-          const response = await fetch(`${BASE_URL_API}/api/auth/me`, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${savedToken}`
-            }
-          });
-          if (response.ok) {
-            setIsAuthorized(true);
-            setAuthRequired(false);
-            setAccessToken(savedToken);
-          } else {
-            setIsAuthorized(false);
-            setAuthRequired(true);
-          }
-        } catch (err) {
-          console.error('Lỗi kết nối API C# Auth từ Electron:', err);
-          setIsAuthorized(false);
-          setAuthRequired(true);
-          setAuthError('Không thể kết nối đến máy chủ xác thực tài khoản.');
-        } finally {
-          setAuthLoading(false);
-        }
-        return;
-      }
-
-      // Luồng Web (Hugging Face)
-      try {
-        const response = await fetch('/api/verify-token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: savedToken }),
-        });
-        const data = await response.json();
-
-        if (data.required) {
-          setAuthRequired(true);
-          if (data.ok) {
-            setIsAuthorized(true);
-            setAccessToken(savedToken);
-          } else {
-            setIsAuthorized(false);
-          }
-        } else {
-          setAuthRequired(false);
-          setIsAuthorized(true);
-        }
-      } catch (err) {
-        console.error('Lỗi xác thực mã truy cập trên Web:', err);
-        // Nếu không chạy được server API (chạy offline local dev), cho phép truy cập tự do
-        setIsAuthorized(true);
-      } finally {
-        setAuthLoading(false);
-      }
-    };
-    verifyInitialToken();
-  }, []);
-
-  const handleLoginSubmit = async () => {
-    if (!emailOrUserName.trim()) {
-      setAuthError('Vui lòng nhập tên đăng nhập hoặc email.');
-      return;
-    }
-    if (!password.trim()) {
-      setAuthError('Vui lòng nhập mật khẩu.');
-      return;
-    }
-    setAuthLoading(true);
-    setAuthError('');
-    const isElectron = window.electron && !window.electron.isWebMock;
-
-    try {
-      let response;
-      if (isElectron) {
-        response = await fetch(`${BASE_URL_API}/api/auth/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            emailOrUserName: emailOrUserName.trim(),
-            password: password.trim(),
-          }),
-        });
-      } else {
-        response = await fetch('/api/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            emailOrUserName: emailOrUserName.trim(),
-            password: password.trim(),
-          }),
-        });
-      }
-
-      const data = await response.json();
-      
-      if (response.ok) {
-        const tokenVal = isElectron 
-          ? (data.token || data.accessToken || (typeof data === 'string' ? data : ''))
-          : (data.data?.token || data.data?.accessToken || (typeof data.data === 'string' ? data.data : ''));
-          
-        if (tokenVal) {
-          localStorage.setItem('token', tokenVal);
-          localStorage.setItem('access_token', tokenVal);
-          setAccessToken(tokenVal);
-          setIsAuthorized(true);
-          setAuthRequired(false);
-        } else {
-          setAuthError('Máy chủ phản hồi đăng nhập thành công nhưng không chứa mã token.');
-        }
-      } else {
-        const errMsg = typeof data === 'string' ? data : (data.error || 'Tên đăng nhập hoặc mật khẩu không chính xác.');
-        setAuthError(errMsg);
-      }
-    } catch (err) {
-      setAuthError(err.message || 'Không thể kết nối đến máy chủ đăng nhập.');
-    } finally {
-      setAuthLoading(false);
-    }
-  };
+  // Các trạng thái bảo mật của hệ thống được quản lý qua hook useAuth
+  const {
+    isAuthorized,
+    authRequired,
+    accessToken,
+    authLoading,
+    emailOrUserName,
+    setEmailOrUserName,
+    password,
+    setPassword,
+    authError,
+    handleLoginSubmit,
+  } = useAuth();
   const [settings, setSettings] = useState(() => {
     const saved = localStorage.getItem('tts_settings');
     if (saved) return JSON.parse(saved);
@@ -294,7 +165,7 @@ const App = () => {
             </span>
             <input
               type="text"
-              placeholder="Tên đăng nhập hoặc Email..."
+              placeholder="Tên đăng nhập..."
               value={emailOrUserName}
               onChange={(e) => setEmailOrUserName(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleLoginSubmit()}
@@ -316,11 +187,7 @@ const App = () => {
             />
           </div>
 
-          {authError && (
-            <div className="login-error-alert">
-              {authError}
-            </div>
-          )}
+          {authError && <div className="login-error-alert">{authError}</div>}
 
           <Button
             type="primary"

@@ -1,0 +1,51 @@
+// src/_service/mediaEnhancer.service.js
+const isElectronEnv = () => window.electron && !window.electron.isWebMock;
+
+export const MediaEnhancerService = {
+  checkEnv: async () => {
+    if (isElectronEnv()) {
+      return await window.electron.checkEnv();
+    }
+    return { ffmpeg: true }; // Assume browser API has ffmpeg or it's handled server-side
+  },
+
+  mediaEnhance: async (fileOrPath, type, options) => {
+    const isElectron = isElectronEnv();
+
+    if (isElectron) {
+      return await window.electron.mediaEnhance(fileOrPath, type, options);
+    } else {
+      // Browser Cloud Path
+      if (!fileOrPath) {
+        throw new Error('Không tìm thấy file để tải lên.');
+      }
+      const formData = new FormData();
+      formData.append('file', fileOrPath);
+      formData.append('type', type);
+      formData.append('options', JSON.stringify(options));
+
+      const response = await fetch('/api/media-enhance', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Server xử lý thất bại.');
+      }
+
+      const result = await response.json();
+      return result;
+    }
+  },
+
+  showItemInFolder: (filePath) => {
+    if (isElectronEnv()) {
+      window.electron.showItemInFolder(filePath);
+    } else {
+      window.open(filePath, '_blank');
+    }
+  }
+};
+
+export default MediaEnhancerService;

@@ -93,7 +93,7 @@
   &:focus {
     background: #fff !important;
     border-color: var(--primary) !important;
-    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1) !important;
+    box-shadow: 0 0 0 4px rgba(13, 148, 136, 0.1) !important;
     transform: translateY(-2px);
   }
 }
@@ -139,7 +139,7 @@
     
     &.ant-select-focused .ant-select-selector {
       border-color: var(--primary) !important;
-      box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1) !important;
+      box-shadow: 0 0 0 4px rgba(13, 148, 136, 0.1) !important;
     }
 
     .ant-select-selection-item,
@@ -155,11 +155,13 @@
   display: flex;
   gap: 12px;
   align-items: center;
+  justify-content: center;
   flex-wrap: wrap;
+  margin-top: 24px;
 
   @media (max-width: 576px) {
     .tts-btn-play {
-      flex: 1 1 100% !important;
+      width: 100% !important;
       display: flex;
       justify-content: center;
       align-items: center;
@@ -167,7 +169,7 @@
 
     .tts-btn-stop,
     .tts-btn-download,
-    .tts-btn-action {
+    .tts-btn-history {
       flex: 1;
       display: flex;
       justify-content: center;
@@ -176,55 +178,85 @@
   }
 
   .tts-btn-play {
-    flex: 1;
-    height: 40px !important;
-    border-radius: 10px !important;
+    width: 220px !important;
+    height: 48px !important;
+    border-radius: 24px !important;
     font-weight: 700 !important;
-    font-size: 0.95rem !important;
-    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%) !important;
+    font-size: 1.05rem !important;
+    background: linear-gradient(135deg, #0d9488 0%, #0f766e 100%) !important;
     border: none !important;
-    box-shadow: 0 6px 10px -3px rgba(99, 102, 241, 0.3) !important;
+    box-shadow: 0 6px 12px -3px rgba(13, 148, 136, 0.4) !important;
     transition: all 0.3s ease !important;
     color: white !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
     
     &:hover {
       transform: translateY(-2px);
-      box-shadow: 0 12px 18px -4px rgba(99, 102, 241, 0.4) !important;
+      box-shadow: 0 12px 20px -4px rgba(13, 148, 136, 0.5) !important;
     }
     
     &.active {
       background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
-      box-shadow: 0 6px 10px -3px rgba(16, 185, 129, 0.3) !important;
+      box-shadow: 0 6px 12px -3px rgba(16, 185, 129, 0.4) !important;
     }
   }
 
   .tts-btn-stop {
-    height: 40px !important;
-    border-radius: 10px !important;
+    height: 48px !important;
+    min-width: 120px !important;
+    border-radius: 24px !important;
     font-weight: 700 !important;
-    padding: 0 16px !important;
+    padding: 0 20px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    transition: all 0.3s ease !important;
+    
+    &:hover {
+      transform: translateY(-2px);
+    }
   }
 
   .tts-btn-download {
-    height: 40px !important;
-    border-radius: 10px !important;
+    height: 48px !important;
+    min-width: 140px !important;
+    border-radius: 24px !important;
     font-weight: 700 !important;
-    padding: 0 16px !important;
+    padding: 0 20px !important;
     background: #f1f5f9 !important;
     border: 1px solid #e2e8f0 !important;
     color: #475569 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    transition: all 0.3s ease !important;
+    
+    &:hover {
+      background: #e2e8f0 !important;
+      transform: translateY(-2px);
+    }
   }
 
-  .tts-btn-action {
-    height: 40px !important;
-    width: 40px !important;
-    border-radius: 10px !important;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  .tts-btn-history {
+    height: 48px !important;
+    width: 48px !important;
+    border-radius: 24px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
     background: white !important;
     border: 1px solid #e2e8f0 !important;
+    color: #475569 !important;
     transition: all 0.3s ease !important;
+    padding: 0 !important;
+    
+    &:hover {
+      background: #f1f5f9 !important;
+      border-color: #cbd5e1 !important;
+      transform: translateY(-2px);
+    }
   }
 }
 

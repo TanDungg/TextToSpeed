@@ -783,7 +783,7 @@ const VideoSubExtractor = () => {
                   <div className="extractor-option-box">
                     <div className="option-header">
                       <span className="option-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <Cpu size={16} style={{ color: '#6366f1' }} />
+                        <Cpu size={16} style={{ color: '#0d9488' }} />
                         Độ tin cậy nhận diện tối thiểu (Lọc nhiễu)
                       </span>
                       <span className="option-value">

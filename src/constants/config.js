@@ -1,4 +1,8 @@
-export const BASE_URL_API = 'http://10.11.22.108:2026';
+export const BASE_URL_API =
+  window.location.hostname.includes('hf.space') ||
+  window.location.hostname.includes('huggingface.co')
+    ? 'https://tandung2306-toolai-api.hf.space'
+    : 'http://10.11.22.108:2026';
 export const BASE_URL_APP = window.location.origin.toString();
 
 export const FORM_LABEL_TOP = {

@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
+import useMediaEnhancer from '../../_hook/useMediaEnhancer';
 import {
   Card,
   Button,
@@ -30,321 +31,27 @@ import './MediaEnhancerStyles.scss';
 const { Title, Text } = Typography;
 
 const MediaEnhancer = () => {
-  const [selectedFile, setSelectedFile] = useState(null); // { name, path, type, size }
-  const [loading, setLoading] = useState(false);
-  const [percent, setPercent] = useState(0);
-  const [enhancedFile, setEnhancedFile] = useState(null); // holds absolute path of enhanced file
-  const [previewMode, setPreviewMode] = useState('original'); // 'original' | 'enhanced'
-  const [logs, setLogs] = useState([]);
-  const [history, setHistory] = useState(() => {
-    return JSON.parse(localStorage.getItem('media_enhance_history') || '[]');
-  });
-
-  // Enhancement options
-  const [options, setOptions] = useState({
-    sharpenAmount: 1.2, // 0.0 to 2.0 (default 1.2 is extremely crisp)
-    denoise: 0.0, // 0.0 to 2.0 (0.0 means OFF by default to preserve raw details)
-    resolution: 'original', // 'original' | '1080p' | '2k' | '4k'
-    scale: 1.0,
-    contrast: 1.05,
-    brightness: 0.0,
-    saturation: 1.05,
-  });
-
-  useEffect(() => {
-    localStorage.setItem('media_enhance_history', JSON.stringify(history));
-  }, [history]);
-
-  const addLog = (messageText, type = 'process') => {
-    const time = new Date().toLocaleTimeString();
-    setLogs((prev) => [...prev, { time, text: messageText, type }]);
-  };
-
-  const clearLogs = () => {
-    setLogs([]);
-  };
-
-  const handleSelectFile = async (typeFilter) => {
-    if (window.electron && !window.electron.isWebMock) {
-      try {
-        const res = await window.electron.selectFile(typeFilter);
-        if (res.canceled || !res.filePaths || res.filePaths.length === 0) {
-          return;
-        }
-
-        const filePath = res.filePaths[0];
-        const fileName = filePath.split(/[\\/]/).pop();
-        const extension = fileName.split('.').pop().toLowerCase();
-
-        const isImg = ['jpg', 'jpeg', 'png', 'webp', 'bmp'].includes(extension);
-        const isVid = ['mp4', 'mkv', 'avi', 'mov', 'webm'].includes(extension);
-
-        if (!isImg && !isVid) {
-          message.error('Định dạng tập tin không được hỗ trợ.');
-          return;
-        }
-
-        setSelectedFile({
-          name: fileName,
-          path: filePath,
-          type: isImg ? 'image' : 'video',
-          extension: extension,
-        });
-        setEnhancedFile(null);
-        setPreviewMode('original');
-
-        addLog(`Đã chọn tập tin: ${fileName}`, 'success');
-        message.success('Đã tải tập tin thành công!');
-      } catch (error) {
-        message.error('Không thể chọn tập tin: ' + error.message);
-      }
-    } else {
-      const input = document.createElement('input');
-      input.type = 'file';
-      if (typeFilter === 'video') {
-        input.accept = 'video/*';
-      } else if (typeFilter === 'image') {
-        input.accept = 'image/*';
-      } else {
-        input.accept = 'video/*,image/*';
-      }
-
-      input.onchange = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        const fileName = file.name;
-        const extension = fileName.split('.').pop().toLowerCase();
-        const isImg = ['jpg', 'jpeg', 'png', 'webp', 'bmp'].includes(extension);
-        const isVid = ['mp4', 'mkv', 'avi', 'mov', 'webm'].includes(extension);
-
-        if (!isImg && !isVid) {
-          message.error('Định dạng tập tin không được hỗ trợ.');
-          return;
-        }
-
-        setSelectedFile({
-          name: fileName,
-          path: URL.createObjectURL(file),
-          type: isImg ? 'image' : 'video',
-          extension: extension,
-          fileObject: file,
-        });
-        setEnhancedFile(null);
-        setPreviewMode('original');
-
-        addLog(`Đã chọn tập tin: ${fileName}`, 'success');
-        message.success('Đã tải tập tin thành công!');
-      };
-      input.click();
-    }
-  };
-
-  const handleResolutionChange = (val) => {
-    let newOptions = { ...options, resolution: val };
-
-    if (val === 'original') {
-      newOptions.sharpenAmount = 1.2;
-      newOptions.denoise = 0.0;
-      newOptions.contrast = 1.05;
-      newOptions.brightness = 0.0;
-      newOptions.saturation = 1.05;
-    } else if (val === '1080p') {
-      newOptions.sharpenAmount = 1.2;
-      newOptions.denoise = 0.1;
-      newOptions.contrast = 1.05;
-      newOptions.brightness = 0.0;
-      newOptions.saturation = 1.05;
-    } else if (val === '2k') {
-      newOptions.sharpenAmount = 1.4;
-      newOptions.denoise = 0.2;
-      newOptions.contrast = 1.08;
-      newOptions.brightness = 0.0;
-      newOptions.saturation = 1.08;
-    } else if (val === '4k') {
-      newOptions.sharpenAmount = 1.6;
-      newOptions.denoise = 0.3;
-      newOptions.contrast = 1.1;
-      newOptions.brightness = 0.0;
-      newOptions.saturation = 1.1;
-    }
-
-    setOptions(newOptions);
-    message.info(`Đã tự động áp dụng cấu hình tối ưu cho độ phân giải ${val.toUpperCase()}!`);
-  };
-
-  const handleEnhance = async () => {
-    if (!selectedFile) {
-      message.warning('Vui lòng chọn ảnh hoặc video trước!');
-      return;
-    }
-
-    setLoading(true);
-    setPercent(10);
-    clearLogs();
-    addLog('Bắt đầu quy trình làm nét...', 'process');
-
-    if (window.electron && !window.electron.isWebMock) {
-      try {
-        // Step 1: Check environment
-        addLog('Đang kiểm tra môi trường xử lý (FFmpeg)...', 'process');
-        const env = await window.electron.checkEnv();
-        if (!env.ffmpeg) {
-          throw new Error('Không tìm thấy FFmpeg trong hệ thống của bạn.');
-        }
-        setPercent(30);
-
-        // Step 2: Processing options log
-        addLog(
-          `Thông số làm nét:
-- Độ sắc nét: ${options.sharpenAmount}
-- Khử nhiễu: ${options.denoise === 0 ? 'Tắt' : `${options.denoise.toFixed(1)}x`}
-- Độ phân giải: ${options.resolution.toUpperCase()}
-- Tương phản: ${options.contrast}
-- Độ sáng: ${options.brightness}
-- Độ bão hòa: ${options.saturation}`,
-          'process'
-        );
-
-        addLog('Đang tiến hành kết xuất và tối ưu hóa chất lượng bằng bộ lọc FFmpeg...', 'process');
-        setPercent(50);
-
-        // Step 3: Run Enhancement
-        const result = await window.electron.mediaEnhance(
-          selectedFile.path,
-          selectedFile.type,
-          options
-        );
-
-        if (!result.ok) {
-          throw new Error(result.error || 'Quá trình làm nét thất bại.');
-        }
-
-        setPercent(100);
-        addLog(`Hoàn tất thành công! Tập tin được lưu tại: ${result.path}`, 'success');
-        message.success('Làm nét ảnh/video thành công!');
-
-        // Update preview to enhanced
-        setEnhancedFile(result.path);
-        setPreviewMode('enhanced');
-
-        // Add to history
-        const newHistoryItem = {
-          id: Date.now(),
-          name: selectedFile.name,
-          type: selectedFile.type,
-          inputPath: selectedFile.path,
-          outputPath: result.path,
-          time: new Date().toLocaleString(),
-        };
-        setHistory((prev) => [newHistoryItem, ...prev]);
-      } catch (error) {
-        addLog(`Lỗi: ${error.message}`, 'error');
-        message.error(error.message);
-        setPercent(0);
-      } finally {
-        setLoading(false);
-      }
-    } else {
-      // Browser Cloud Path
-      try {
-        if (!selectedFile.fileObject) {
-          throw new Error('Không tìm thấy file để tải lên.');
-        }
-        setPercent(20);
-        addLog('Đang gửi tệp tin lên Cloud Server...', 'process');
-
-        const formData = new FormData();
-        formData.append('file', selectedFile.fileObject);
-        formData.append('type', selectedFile.type);
-        formData.append('options', JSON.stringify(options));
-
-        setPercent(40);
-        addLog('Đang xử lý làm nét phương tiện trên Cloud Server (FFmpeg)...', 'process');
-
-        const response = await fetch('/api/media-enhance', {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (!response.ok) {
-          const errData = await response.json();
-          throw new Error(errData.error || 'Server xử lý thất bại.');
-        }
-
-        const result = await response.json();
-        if (!result.ok) {
-          throw new Error(result.error || 'Quá trình làm nét thất bại.');
-        }
-
-        setPercent(100);
-        addLog('Hoàn tất thành công trên Cloud Server!', 'success');
-        message.success('Làm nét ảnh/video thành công!');
-
-        setEnhancedFile(result.url);
-        setPreviewMode('enhanced');
-
-        const newHistoryItem = {
-          id: Date.now(),
-          name: selectedFile.name,
-          type: selectedFile.type,
-          inputPath: selectedFile.path,
-          outputPath: result.url,
-          time: new Date().toLocaleString(),
-        };
-        setHistory((prev) => [newHistoryItem, ...prev]);
-      } catch (error) {
-        addLog(`Lỗi Cloud: ${error.message}`, 'error');
-        message.error(error.message);
-        setPercent(0);
-      } finally {
-        setLoading(false);
-      }
-    }
-  };
-
-  const handleDeleteHistory = (id) => {
-    setHistory((prev) => prev.filter((item) => item.id !== id));
-    message.success('Đã xóa lịch sử.');
-  };
-
-  const handleOpenFolder = (filePath) => {
-    if (window.electron && !window.electron.isWebMock) {
-      window.electron.showItemInFolder(filePath);
-      message.success('Đã mở thư mục chứa tệp!');
-    } else {
-      window.open(filePath, '_blank');
-    }
-  };
-
-  const handleSelectHistoryItem = (item) => {
-    const extension = item.name.split('.').pop().toLowerCase();
-    setSelectedFile({
-      name: item.name,
-      path: item.inputPath,
-      type: item.type,
-      extension: extension,
-    });
-    setEnhancedFile(item.outputPath);
-    setPreviewMode('enhanced');
-    addLog(`Đã tải lại tệp từ lịch sử: ${item.name}`, 'success');
-  };
-
-  const getPreviewUrl = () => {
-    if (previewMode === 'enhanced' && enhancedFile) {
-      if (window.electron && !window.electron.isWebMock) {
-        return `media://${enhancedFile.replace(/\\/g, '/')}`;
-      }
-      return enhancedFile;
-    }
-    if (selectedFile) {
-      if (window.electron && !window.electron.isWebMock) {
-        return `media://${selectedFile.path.replace(/\\/g, '/')}`;
-      }
-      return selectedFile.path;
-    }
-    return '';
-  };
+  const {
+    selectedFile,
+    setSelectedFile,
+    loading,
+    percent,
+    enhancedFile,
+    setEnhancedFile,
+    previewMode,
+    setPreviewMode,
+    logs,
+    options,
+    setOptions,
+    history,
+    handleSelectFile,
+    handleResolutionChange,
+    handleEnhance,
+    handleDeleteHistory,
+    handleOpenFolder,
+    handleSelectHistoryItem,
+    getPreviewUrl,
+  } = useMediaEnhancer();
 
   return (
     <div className="tool-container media-enhancer-container">
@@ -526,7 +233,7 @@ const MediaEnhancer = () => {
                         className="option-title"
                         style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
                       >
-                        <Cpu size={16} style={{ color: '#6366f1' }} />
+                        <Cpu size={16} style={{ color: '#0d9488' }} />
                         Khử nhiễu
                       </span>
                       <span className="option-value">

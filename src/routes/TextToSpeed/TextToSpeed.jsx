@@ -364,12 +364,21 @@ const TextToSpeed = ({ settings }) => {
                 {loading ? 'ĐANG XỬ LÝ...' : playbackStatus === 'playing' ? 'TẠM DỪNG' : 'PHÁT'}
               </Button>
               {playbackStatus !== 'idle' && (
-                <Button danger icon={<StopOutlined />} onClick={handleStop}>
+                <Button
+                  danger
+                  icon={<StopOutlined />}
+                  onClick={handleStop}
+                  className="tts-btn-stop"
+                >
                   DỪNG
                 </Button>
               )}
               {currentUrl && (
-                <Button icon={<DownloadOutlined />} onClick={handleDownload}>
+                <Button
+                  icon={<DownloadOutlined />}
+                  onClick={handleDownload}
+                  className="tts-btn-download"
+                >
                   TẢI XUỐNG
                 </Button>
               )}
@@ -377,6 +386,7 @@ const TextToSpeed = ({ settings }) => {
                 icon={<HistoryOutlined />}
                 onClick={() => setShowHistoryModal(true)}
                 title="Lịch sử"
+                className="tts-btn-history"
               />
             </div>
           </div>

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { BASE_URL_API, BASE_URL_APP } from 'src/constants/Config';
+import { BASE_URL_API, BASE_URL_APP } from 'src/constants/config';
 
 let isRedirectingToLogin = false;
 
@@ -22,7 +22,7 @@ axiosInstance.interceptors.request.use(
 
     config.metadata = { startTime: Date.now() };
 
-    if (process.env.NODE_ENV === 'development') {
+    if (import.meta.env.DEV) {
       console.log('🚀 Request:', {
         method: config.method?.toUpperCase(),
         url: config.url,
@@ -44,7 +44,7 @@ axiosInstance.interceptors.response.use(
     const startTime = response.config?.metadata?.startTime;
     const duration = startTime ? Date.now() - startTime : 0;
 
-    if (process.env.NODE_ENV === 'development') {
+    if (import.meta.env.DEV) {
       console.log('✅ Response:', {
         status: response.status,
         url: response.config.url,

@@ -11,7 +11,7 @@
   }
 
   .upload-area {
-    border: 2px dashed rgba(99, 102, 241, 0.3);
+    border: 2px dashed rgba(13, 148, 136, 0.3);
     border-radius: 16px;
     padding: 24px 16px;
     text-align: center;
@@ -26,13 +26,13 @@
 
     &:hover {
       border-color: var(--primary);
-      background: rgba(99, 102, 241, 0.04);
+      background: rgba(13, 148, 136, 0.04);
       transform: translateY(-2px);
     }
 
     svg {
       color: var(--primary);
-      filter: drop-shadow(0 4px 6px rgba(99, 102, 241, 0.2));
+      filter: drop-shadow(0 4px 6px rgba(13, 148, 136, 0.2));
     }
 
     .upload-title {
@@ -342,9 +342,9 @@
     gap: 12px;
 
     .extractor-btn {
-      height: 44px !important;
-      padding: 0 30px !important;
-      border-radius: 22px !important;
+      height: 48px !important;
+      padding: 0 32px !important;
+      border-radius: 24px !important;
       font-size: 1rem !important;
       font-weight: 800 !important;
       letter-spacing: 0.05em !important;
@@ -353,16 +353,16 @@
       justify-content: center;
       gap: 10px;
       transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
-      box-shadow: 0 8px 16px -4px rgba(99, 102, 241, 0.4) !important;
+      box-shadow: 0 8px 16px -4px rgba(13, 148, 136, 0.4) !important;
 
       &.start-btn {
-        background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%) !important;
+        background: linear-gradient(135deg, #0d9488 0%, #0f766e 100%) !important;
         border: none !important;
         color: white !important;
 
         &:hover:not(:disabled) {
           transform: scale(1.05) translateY(-3px);
-          box-shadow: 0 15px 25px -8px rgba(99, 102, 241, 0.5) !important;
+          box-shadow: 0 15px 25px -8px rgba(13, 148, 136, 0.5) !important;
         }
       }
 
@@ -442,7 +442,7 @@
 
       &.process {
         color: var(--primary);
-        background: rgba(99, 102, 241, 0.05);
+        background: rgba(13, 148, 136, 0.05);
       }
 
       &.success {
@@ -527,7 +527,7 @@
 
       &.active {
         border-color: var(--primary);
-        background: rgba(99, 102, 241, 0.03);
+        background: rgba(13, 148, 136, 0.03);
       }
 
       .sub-index {
@@ -584,7 +584,7 @@
             border-color: var(--primary);
             background: #ffffff;
             outline: none;
-            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.1);
+            box-shadow: 0 0 0 2px rgba(13, 148, 136, 0.1);
           }
         }
       }

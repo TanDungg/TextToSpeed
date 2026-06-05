@@ -56,7 +56,7 @@
     &:focus,
     &:hover {
       border-color: var(--primary) !important;
-      box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1) !important;
+      box-shadow: 0 0 0 4px rgba(13, 148, 136, 0.1) !important;
     }
   }
 
@@ -93,14 +93,14 @@
   }
 
   .search-beats-btn {
-    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%) !important;
+    background: linear-gradient(135deg, #0d9488 0%, #0f766e 100%) !important;
     border: none !important;
     color: white !important;
-    box-shadow: 0 4px 10px -2px rgba(99, 102, 241, 0.4) !important;
+    box-shadow: 0 4px 10px -2px rgba(13, 148, 136, 0.4) !important;
 
     &:hover:not(:disabled) {
       transform: translateY(-1px);
-      box-shadow: 0 8px 16px -4px rgba(99, 102, 241, 0.5) !important;
+      box-shadow: 0 8px 16px -4px rgba(13, 148, 136, 0.5) !important;
     }
   }
 
@@ -130,7 +130,7 @@
 
     &.selected {
       border-color: var(--primary);
-      background: rgba(99, 102, 241, 0.03);
+      background: rgba(13, 148, 136, 0.03);
       box-shadow: 0 0 0 1px var(--primary);
     }
 
@@ -238,7 +238,7 @@
 
       &.process {
         color: var(--primary);
-        background: rgba(99, 102, 241, 0.05);
+        background: rgba(13, 148, 136, 0.05);
       }
       &.success {
         color: #10b981;
