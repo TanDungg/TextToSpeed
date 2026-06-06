@@ -8,6 +8,7 @@ import VideoRemaker from './routes/VideoRemaker/VideoRemaker';
 import MediaEnhancer from './routes/MediaEnhancer/MediaEnhancer';
 import VideoSubExtractor from './routes/VideoSubExtractor/VideoSubExtractor';
 import LofiHelper from './routes/LofiHelper/LofiHelper';
+import BatchImageGenerator from './routes/BatchImageGenerator/BatchImageGenerator';
 import SettingsModal from './components/Setting/SettingsModal';
 import {
   SoundOutlined,
@@ -21,6 +22,7 @@ import {
   MenuOutlined,
   UserOutlined,
   LockOutlined,
+  AppstoreAddOutlined,
 } from '@ant-design/icons';
 
 // Interceptor cho fetch toàn cục để tự động đính kèm mã truy cập (Access Token) vào Header của mọi request gửi lên Server
@@ -77,6 +79,7 @@ const App = () => {
       fptKey: '',
       googleKey: '',
       geminiKey: '',
+      replicateKey: '',
     };
   });
 
@@ -120,6 +123,12 @@ const App = () => {
       icon: <CustomerServiceOutlined />,
       label: 'Hỗ trợ Lofi Remix',
       children: <LofiHelper settings={settings} />,
+    },
+    {
+      key: '7',
+      icon: <AppstoreAddOutlined />,
+      label: 'Sản xuất ảnh loạt',
+      children: <BatchImageGenerator globalSettings={settings} />,
     },
   ];
 

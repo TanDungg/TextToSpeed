@@ -17,17 +17,32 @@ export const useMediaEnhancer = () => {
   // Enhancement options
   const [options, setOptions] = useState({
     sharpenAmount: 1.2,
+    sharpenMethod: 'unsharp', // 'cas' | 'unsharp'
     denoise: 0.0,
+    denoiseMethod: 'none', // 'bilateral' | 'hqdn3d' | 'none'
     resolution: 'original',
     scale: 1.0,
     contrast: 1.05,
     brightness: 0.0,
     saturation: 1.05,
+    useLocalAI: true,
+    aiModel: 'realesr-animevideov3',
   });
 
   useEffect(() => {
     localStorage.setItem('media_enhance_history', JSON.stringify(history));
   }, [history]);
+
+  useEffect(() => {
+    const isElectron = window.electron && !window.electron.isWebMock;
+    if (isElectron && window.electron.on) {
+      const unsubscribe = window.electron.on('media-enhance-progress', (data) => {
+        if (data.text) addLog(data.text, data.type || 'process');
+        if (data.percent !== undefined) setPercent(data.percent);
+      });
+      return unsubscribe;
+    }
+  }, []);
 
   const addLog = (messageText, type = 'process') => {
     const time = new Date().toLocaleTimeString();
@@ -164,26 +179,8 @@ export const useMediaEnhancer = () => {
 
     try {
       if (isElectron) {
-        addLog('Đang kiểm tra môi trường xử lý (FFmpeg)...', 'process');
-        const env = await MediaEnhancerService.checkEnv();
-        if (!env.ffmpeg) {
-          throw new Error('Không tìm thấy FFmpeg trong hệ thống của bạn.');
-        }
-        setPercent(30);
-
-        addLog(
-          `Thông số làm nét:
-- Độ sắc nét: ${options.sharpenAmount}
-- Khử nhiễu: ${options.denoise === 0 ? 'Tắt' : `${options.denoise.toFixed(1)}x`}
-- Độ phân giải: ${options.resolution.toUpperCase()}
-- Tương phản: ${options.contrast}
-- Độ sáng: ${options.brightness}
-- Độ bão hòa: ${options.saturation}`,
-          'process'
-        );
-
-        addLog('Đang tiến hành kết xuất và tối ưu hóa chất lượng bằng bộ lọc FFmpeg...', 'process');
-        setPercent(50);
+        addLog('Khởi tạo quy trình nâng cấp chất lượng bằng AI Local...', 'process');
+        setPercent(15);
 
         const result = await MediaEnhancerService.mediaEnhance(
           selectedFile.path,

@@ -5,7 +5,16 @@ const axios = require('axios');
 
 // Register the media protocol as secure, standard, supporting fetch, streaming, and CORS
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'media', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } }
+  {
+    scheme: 'media',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      stream: true,
+      corsEnabled: true,
+    },
+  },
 ]);
 
 const isDev = !app.isPackaged;
@@ -94,12 +103,12 @@ app.whenReady().then(() => {
     // Extract local file path from media:// URL
     const urlPath = request.url.replace('media://', '');
     let decodedPath = decodeURIComponent(urlPath);
-    
+
     // Restore the Windows drive colon if stripped by Chromium's URL parser (e.g. 'd/' -> 'd:/')
     if (/^[a-zA-Z]\//.test(decodedPath)) {
       decodedPath = decodedPath[0] + ':' + decodedPath.slice(1);
     }
-    
+
     try {
       return net.fetch(pathToFileURL(decodedPath).toString());
     } catch (err) {
@@ -256,8 +265,11 @@ async function handleVideoDownload(event, { url }) {
       // Tìm xem có file phụ đề nào được tải về cùng tên gốc không
       const baseWithoutExt = outputPath.slice(0, -4); // Cắt đuôi .mp4
       const files = fs.readdirSync(tempDir);
-      const subFile = files.find(f => f.startsWith(path.basename(baseWithoutExt)) && (f.endsWith('.vtt') || f.endsWith('.srt')));
-      
+      const subFile = files.find(
+        (f) =>
+          f.startsWith(path.basename(baseWithoutExt)) && (f.endsWith('.vtt') || f.endsWith('.srt'))
+      );
+
       let subContent = '';
       let subPath = '';
       if (subFile) {
@@ -274,8 +286,12 @@ async function handleVideoDownload(event, { url }) {
     if (foundFile) {
       const actualPath = path.join(tempDir, foundFile);
       const actualBaseWithoutExt = actualPath.slice(0, -4);
-      const subFile = files.find(f => f.startsWith(path.basename(actualBaseWithoutExt)) && (f.endsWith('.vtt') || f.endsWith('.srt')));
-      
+      const subFile = files.find(
+        (f) =>
+          f.startsWith(path.basename(actualBaseWithoutExt)) &&
+          (f.endsWith('.vtt') || f.endsWith('.srt'))
+      );
+
       let subContent = '';
       let subPath = '';
       if (subFile) {
@@ -292,7 +308,7 @@ async function handleVideoDownload(event, { url }) {
     };
   } catch (error) {
     console.warn('Download command finished with potential warnings/errors:', error.message);
-    
+
     // Nếu file video thực tế vẫn được tải thành công (dù lỗi phụ đề)
     if (fs.existsSync(outputPath)) {
       return { ok: true, path: outputPath, subContent: '', subPath: '' };
@@ -358,13 +374,16 @@ async function handleVideoRemake(event, { inputPath, options }) {
   }
 
   if (!hasAudio && !hasVideo) {
-    return { ok: false, error: 'File đầu vào không hợp lệ hoặc không chứa bất kỳ luồng âm thanh hoặc video nào.' };
+    return {
+      ok: false,
+      error: 'File đầu vào không hợp lệ hoặc không chứa bất kỳ luồng âm thanh hoặc video nào.',
+    };
   }
 
   const isStrong = options.remakeLevel === 'strong';
   let filters = [];
   if (options.flip) filters.push('hflip');
-  
+
   if (options.colorShift) {
     if (isStrong) {
       // LÁCH MẠNH (YouTube Content ID): Zoom nhẹ 4% (crop & scale) để phá tọa độ điểm ảnh, thay đổi hệ màu rõ hơn, thêm hạt nhiễu (noise grain) nhẹ
@@ -379,7 +398,7 @@ async function handleVideoRemake(event, { inputPath, options }) {
       filters.push('hue=h=2:s=1.05,eq=contrast=1.03:brightness=0.01');
     }
   }
-  
+
   if (options.vignette) {
     if (isStrong) {
       // Góc tối rõ nét hơn
@@ -451,8 +470,10 @@ async function handleVideoRemake(event, { inputPath, options }) {
       const streamIdx = index + 1;
       // Áp dụng bộ lọc adelay với :all=1 để tự động delay toàn bộ channel (tương thích cả mono và stereo)
       // Ép định dạng stereo qua aformat để khớp 100% với âm thanh nền, tránh việc amix bỏ qua hoặc làm mất tiếng mono
-      const outLabel = (externalAudioList.length === 1 && !hasAudio) ? '[a]' : `[a${streamIdx}]`;
-      filterParts.push(`[${streamIdx}:a]adelay=${delayMs}:all=1,volume=1.5,aformat=channel_layouts=stereo${outLabel}`);
+      const outLabel = externalAudioList.length === 1 && !hasAudio ? '[a]' : `[a${streamIdx}]`;
+      filterParts.push(
+        `[${streamIdx}:a]adelay=${delayMs}:all=1,volume=1.5,aformat=channel_layouts=stereo${outLabel}`
+      );
       mixInputs += outLabel;
     });
 
@@ -462,7 +483,9 @@ async function handleVideoRemake(event, { inputPath, options }) {
       // Trộn tất cả lại: âm thanh gốc + các file voice (Tắt tự động giảm âm lượng normalize=0)
       // Số lượng input = số file voice + 1 (âm thanh gốc)
       const totalInputs = externalAudioList.length + 1;
-      filterParts.push(`[bg_a]${mixInputs}amix=inputs=${totalInputs}:duration=first:normalize=0[a]`);
+      filterParts.push(
+        `[bg_a]${mixInputs}amix=inputs=${totalInputs}:duration=first:normalize=0[a]`
+      );
     } else {
       const totalInputs = externalAudioList.length;
       if (totalInputs > 1) {
@@ -644,24 +667,155 @@ ipcMain.handle('check-env', async () => {
 
 ipcMain.handle('select-file', async (event, { type }) => {
   const { dialog } = require('electron');
-  const filters = type === 'image'
-    ? [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp'] }]
-    : type === 'video'
-      ? [{ name: 'Videos', extensions: ['mp4', 'mkv', 'avi', 'mov', 'webm'] }]
-      : [{ name: 'Media', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'mp4', 'mkv', 'avi', 'mov', 'webm'] }];
+  const filters =
+    type === 'image'
+      ? [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp'] }]
+      : type === 'video'
+        ? [{ name: 'Videos', extensions: ['mp4', 'mkv', 'avi', 'mov', 'webm'] }]
+        : [
+            {
+              name: 'Media',
+              extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'mp4', 'mkv', 'avi', 'mov', 'webm'],
+            },
+          ];
 
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openFile'],
-    filters: filters
+    filters: filters,
   });
   return result;
 });
 
+// Helper to download and unzip Real-ESRGAN portable executable
+async function setupLocalRealESRGAN(event) {
+  const fs = require('fs');
+  const userDownloads = app.getPath('downloads');
+  const binDir = path.join(userDownloads, 'SmartRemaker', 'bin', 'realesrgan');
+  const exePathDirect = path.join(binDir, 'realesrgan-ncnn-vulkan.exe');
+
+  if (fs.existsSync(exePathDirect)) {
+    return exePathDirect;
+  }
+
+  event.sender.send('media-enhance-progress', {
+    text: 'Không tìm thấy bộ cài đặt Real-ESRGAN cục bộ. Bắt đầu tải xuống (khoảng 15MB)...',
+    percent: 15,
+  });
+
+  const zipPath = path.join(userDownloads, 'SmartRemaker', 'realesrgan-temp.zip');
+  const smartRemakerDir = path.join(userDownloads, 'SmartRemaker');
+  if (!fs.existsSync(smartRemakerDir)) {
+    fs.mkdirSync(smartRemakerDir, { recursive: true });
+  }
+
+  try {
+    const response = await axios({
+      url: 'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-windows.zip',
+      method: 'GET',
+      responseType: 'stream',
+    });
+
+    const totalLength = parseInt(response.headers['content-length'], 10) || 15800000;
+    let downloadedLength = 0;
+    const writer = fs.createWriteStream(zipPath);
+
+    response.data.on('data', (chunk) => {
+      downloadedLength += chunk.length;
+      const percent = 15 + Math.round((downloadedLength / totalLength) * 20); // 15% to 35%
+      event.sender.send('media-enhance-progress', {
+        text: `Đang tải: ${Math.round((downloadedLength / 1024 / 1024) * 10) / 10}MB / ${Math.round((totalLength / 1024 / 1024) * 10) / 10}MB`,
+        percent,
+      });
+    });
+
+    response.data.pipe(writer);
+
+    await new Promise((resolve, reject) => {
+      writer.on('finish', resolve);
+      writer.on('error', reject);
+    });
+
+    event.sender.send('media-enhance-progress', {
+      text: 'Tải xuống thành công. Đang giải nén bộ cài đặt Real-ESRGAN...',
+      percent: 40,
+    });
+
+    if (!fs.existsSync(binDir)) {
+      fs.mkdirSync(binDir, { recursive: true });
+    }
+
+    const subDirName = 'realesrgan-ncnn-vulkan-20220424-windows';
+    const exePathSub = path.join(binDir, subDirName, 'realesrgan-ncnn-vulkan.exe');
+
+    const util = require('util');
+    const execPromise = util.promisify(exec);
+
+    const psCommand = `powershell -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${binDir}' -Force; if (Test-Path '${exePathSub}') { Move-Item -Path '${binDir}\\${subDirName}\\*' -Destination '${binDir}' -Force; Remove-Item -Path '${binDir}\\${subDirName}' -Recurse -Force }; if (Test-Path '${zipPath}') { Remove-Item -Path '${zipPath}' -Force }"`;
+
+    await execPromise(psCommand);
+
+    if (fs.existsSync(exePathDirect)) {
+      event.sender.send('media-enhance-progress', {
+        text: 'Giải nén và thiết lập Real-ESRGAN thành công!',
+        percent: 45,
+      });
+      return exePathDirect;
+    } else {
+      throw new Error('Giải nén thành công nhưng không tìm thấy file executable.');
+    }
+  } catch (error) {
+    if (fs.existsSync(zipPath)) {
+      try {
+        fs.unlinkSync(zipPath);
+      } catch (e) {}
+    }
+    throw new Error(`Lỗi tải/thiết lập Local AI: ${error.message}`);
+  }
+}
+
+let activeEnhanceProcess = null;
+let activePollInterval = null;
+
+function cancelActiveEnhanceJob() {
+  if (activePollInterval) {
+    clearInterval(activePollInterval);
+    activePollInterval = null;
+  }
+  if (activeEnhanceProcess) {
+    try {
+      activeEnhanceProcess.kill('SIGKILL');
+    } catch (e) {
+      console.warn('Failed to kill active process:', e.message);
+    }
+    activeEnhanceProcess = null;
+  }
+}
+
+function runEnhanceCommand(command, runOptions) {
+  const { exec } = require('child_process');
+  return new Promise((resolve, reject) => {
+    const child = exec(command, runOptions, (error, stdout, stderr) => {
+      if (activeEnhanceProcess === child) {
+        activeEnhanceProcess = null;
+      }
+      if (error) {
+        reject(error);
+      } else {
+        resolve({ stdout, stderr });
+      }
+    });
+    activeEnhanceProcess = child;
+  });
+}
+
 ipcMain.handle('media-enhance', async (event, { inputPath, type, options }) => {
   const fs = require('fs');
   const util = require('util');
-  const { exec } = require('child_process');
+  const { exec, execSync } = require('child_process');
   const execAsync = util.promisify(exec);
+
+  // Cancel any stale/active background enhancement job first
+  cancelActiveEnhanceJob();
 
   const ext = path.extname(inputPath);
   const tempDir = path.join(app.getPath('downloads'), 'SmartRemaker', 'enhanced');
@@ -670,6 +824,215 @@ ipcMain.handle('media-enhance', async (event, { inputPath, type, options }) => {
   }
 
   const outputPath = path.join(tempDir, `enhanced_${Date.now()}${ext}`);
+
+  // 0. Local AI Branch (Real-ESRGAN)
+  if (options.useLocalAI) {
+    try {
+      const exePath = await setupLocalRealESRGAN(event);
+      const binDir = path.dirname(exePath);
+
+      let scale = 2;
+      try {
+        const dimensions = execSync(
+          `ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "${inputPath}"`
+        )
+          .toString()
+          .trim();
+        const [w, h] = dimensions.split(',').map(Number);
+
+        if (w && h) {
+          const maxDim = Math.max(w, h);
+          if (options.resolution === '4k') {
+            // Cap scale at 2x if the original resolution is already large (>= 1600px), preventing memory issues and 8K blowups
+            if (maxDim >= 1600) {
+              scale = 2;
+            } else {
+              scale = 4;
+            }
+          } else if (options.resolution === '2k') {
+            scale = 2;
+          } else {
+            scale = 2;
+          }
+        }
+      } catch (e) {
+        console.warn(
+          'Failed to detect dimensions via ffprobe, falling back to option resolution:',
+          e.message
+        );
+        if (options.resolution === '4k') {
+          scale = 4;
+        } else {
+          scale = 2;
+        }
+      }
+
+      // Read selected AI Model (default to speed optimized model for general use/videos)
+      const modelName = options.aiModel || 'realesr-animevideov3';
+
+      if (type === 'image') {
+        event.sender.send('media-enhance-progress', {
+          text: `Đang chạy mô hình AI (${modelName}) làm nét ảnh...`,
+          percent: 60,
+        });
+        const command = `.\\realesrgan-ncnn-vulkan.exe -i "${inputPath}" -o "${outputPath}" -n ${modelName} -s ${scale}`;
+        await runEnhanceCommand(command, { cwd: binDir });
+
+        if (fs.existsSync(outputPath)) {
+          event.sender.send('media-enhance-progress', {
+            text: 'Hoàn tất làm nét ảnh!',
+            percent: 100,
+          });
+          return { ok: true, path: outputPath };
+        } else {
+          return { ok: false, error: 'Không tìm thấy ảnh đầu ra sau khi chạy Real-ESRGAN.' };
+        }
+      } else {
+        // Video local AI upscaling
+        const videoTempDir = path.join(
+          app.getPath('downloads'),
+          'SmartRemaker',
+          'temp_frames_' + Date.now()
+        );
+        const inputFramesDir = path.join(videoTempDir, 'input_frames');
+        const outputFramesDir = path.join(videoTempDir, 'output_frames');
+        const audioPath = path.join(videoTempDir, 'audio.aac');
+
+        try {
+          fs.mkdirSync(inputFramesDir, { recursive: true });
+          fs.mkdirSync(outputFramesDir, { recursive: true });
+
+          // Step 1: Extract frames
+          event.sender.send('media-enhance-progress', {
+            text: 'Bước 1/5: Đang tách các khung hình từ video...',
+            percent: 15,
+          });
+          await runEnhanceCommand(
+            `ffmpeg -i "${inputPath}" -q:v 2 "${inputFramesDir}/frame_%06d.png"`,
+            { maxBuffer: 1024 * 1024 * 50 }
+          );
+
+          const totalFrames = fs.readdirSync(inputFramesDir).length;
+          if (totalFrames === 0) {
+            throw new Error('Không thể trích xuất khung hình từ video.');
+          }
+
+          // Step 2: Extract audio
+          event.sender.send('media-enhance-progress', {
+            text: 'Bước 2/5: Đang trích xuất âm thanh từ video...',
+            percent: 25,
+          });
+          let hasAudio = false;
+          try {
+            const audioCheck = execSync(
+              `ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 "${inputPath}"`
+            )
+              .toString()
+              .trim();
+            hasAudio = audioCheck !== '';
+          } catch (e) {
+            console.warn('Failed to check audio streams:', e.message);
+          }
+
+          if (hasAudio) {
+            await runEnhanceCommand(
+              `ffmpeg -i "${inputPath}" -vn -ac:a 2 -c:a aac -y "${audioPath}"`,
+              { maxBuffer: 1024 * 1024 * 50 }
+            );
+          }
+
+          // Step 3: Get FPS
+          event.sender.send('media-enhance-progress', {
+            text: 'Bước 3/5: Đang phân tích tốc độ khung hình (FPS)...',
+            percent: 35,
+          });
+          let fps = '30';
+          try {
+            const fpsOutput = execSync(
+              `ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate -of default=noprint_wrappers=1:nokey=1 "${inputPath}"`
+            )
+              .toString()
+              .trim();
+            if (fpsOutput && /^[0-9]+(\/[0-9]+)?$/.test(fpsOutput)) {
+              fps = fpsOutput;
+            }
+          } catch (e) {
+            console.warn('Failed to query FPS, using default 30:', e.message);
+          }
+
+          // Step 4: AI Upscale
+          event.sender.send('media-enhance-progress', {
+            text: `Bước 4/5: Bắt đầu làm nét ${totalFrames} khung hình bằng AI (${modelName})...`,
+            percent: 45,
+          });
+
+          activePollInterval = setInterval(() => {
+            try {
+              if (fs.existsSync(outputFramesDir)) {
+                const processedCount = fs.readdirSync(outputFramesDir).length;
+                const currentPercent = 45 + Math.round((processedCount / totalFrames) * 45); // 45% to 90%
+                event.sender.send('media-enhance-progress', {
+                  text: `Đang làm nét bằng AI: Khung hình ${processedCount}/${totalFrames}`,
+                  percent: Math.min(90, currentPercent),
+                });
+              }
+            } catch (err) {
+              console.error('Progress polling error:', err);
+            }
+          }, 1500);
+
+          try {
+            const command = `.\\realesrgan-ncnn-vulkan.exe -i "${inputFramesDir}" -o "${outputFramesDir}" -n ${modelName} -s ${scale}`;
+            await runEnhanceCommand(command, { cwd: binDir });
+          } finally {
+            if (activePollInterval) {
+              clearInterval(activePollInterval);
+              activePollInterval = null;
+            }
+          }
+
+          // Step 5: Reassemble video
+          event.sender.send('media-enhance-progress', {
+            text: 'Bước 5/5: Đang ghép nối các khung hình và âm thanh thành video...',
+            percent: 90,
+          });
+
+          if (hasAudio && fs.existsSync(audioPath)) {
+            await runEnhanceCommand(
+              `ffmpeg -framerate ${fps} -i "${outputFramesDir}/frame_%06d.png" -i "${audioPath}" -c:v libx264 -pix_fmt yuv420p -threads 4 -c:a aac -shortest -y "${outputPath}"`,
+              { maxBuffer: 1024 * 1024 * 50 }
+            );
+          } else {
+            await runEnhanceCommand(
+              `ffmpeg -framerate ${fps} -i "${outputFramesDir}/frame_%06d.png" -c:v libx264 -pix_fmt yuv420p -threads 4 -y "${outputPath}"`,
+              { maxBuffer: 1024 * 1024 * 50 }
+            );
+          }
+
+          if (fs.existsSync(outputPath)) {
+            event.sender.send('media-enhance-progress', {
+              text: 'Hoàn tất nâng cấp video!',
+              percent: 100,
+            });
+            return { ok: true, path: outputPath };
+          } else {
+            return { ok: false, error: 'Không thể ghép nối video đầu ra.' };
+          }
+        } finally {
+          try {
+            if (fs.existsSync(videoTempDir)) {
+              fs.rmSync(videoTempDir, { recursive: true, force: true });
+            }
+          } catch (err) {
+            console.error('Error cleaning up temp directory:', err);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Local AI Upscaling Error:', error);
+      return { ok: false, error: `Lỗi AI Local: ${error.message}` };
+    }
+  }
 
   // Detect if the video/image is vertical (height > width)
   let isVertical = false;
@@ -688,21 +1051,29 @@ ipcMain.handle('media-enhance', async (event, { inputPath, type, options }) => {
 
   // Build FFmpeg filter complex
   let filters = [];
-  
-  // 1. Denoise (using adjustable strength)
+
+  // 1. Denoise (using adjustable strength and method)
   if (options.denoise && options.denoise > 0) {
-    const lSpatial = (4.0 * options.denoise).toFixed(1);
-    const cSpatial = (3.0 * options.denoise).toFixed(1);
-    const lTmp = (6.0 * options.denoise).toFixed(1);
-    const cTmp = (4.5 * options.denoise).toFixed(1);
-    filters.push(`hqdn3d=${lSpatial}:${cSpatial}:${lTmp}:${cTmp}`);
+    if (options.denoiseMethod === 'bilateral') {
+      // Bilateral filter: map options.denoise (0.0 to 2.0) to sigmaS (1.0 to 5.0) and sigmaR (0.05 to 0.3)
+      const sigmaS = (1.0 + options.denoise * 2.0).toFixed(1);
+      const sigmaR = (0.05 + options.denoise * 0.1).toFixed(2);
+      filters.push(`bilateral=sigmaS=${sigmaS}:sigmaR=${sigmaR}`);
+    } else if (options.denoiseMethod !== 'none') {
+      // Default: hqdn3d
+      const lSpatial = (4.0 * options.denoise).toFixed(1);
+      const cSpatial = (3.0 * options.denoise).toFixed(1);
+      const lTmp = (6.0 * options.denoise).toFixed(1);
+      const cTmp = (4.5 * options.denoise).toFixed(1);
+      filters.push(`hqdn3d=${lSpatial}:${cSpatial}:${lTmp}:${cTmp}`);
+    }
   }
 
   // 2. Scale (upscaling to 1080p, 2K, or 4K with auto-adaptive horizontal/vertical matching)
   if (options.resolution && options.resolution !== 'original') {
     let targetWidth = 1920;
     let targetHeight = 1080;
-    
+
     if (options.resolution === '2k') {
       targetWidth = isVertical ? 1440 : 2560;
       targetHeight = isVertical ? 2560 : 1440;
@@ -713,29 +1084,39 @@ ipcMain.handle('media-enhance', async (event, { inputPath, type, options }) => {
       targetWidth = isVertical ? 1080 : 1920;
       targetHeight = isVertical ? 1920 : 1080;
     }
-    
-    filters.push(`scale='if(gte(iw,ih),${targetWidth},-2)':'if(gte(iw,ih),-2,${targetHeight})':flags=lanczos`);
+
+    filters.push(
+      `scale='if(gte(iw,ih),${targetWidth},-2)':'if(gte(iw,ih),-2,${targetHeight})':flags=lanczos`
+    );
   } else if (options.scale && options.scale > 1.0) {
     // Fallback for old options compatibility
-    filters.push(`scale='trunc(iw*${options.scale}/2)*2':'trunc(ih*${options.scale}/2)*2':flags=lanczos`);
+    filters.push(
+      `scale='trunc(iw*${options.scale}/2)*2':'trunc(ih*${options.scale}/2)*2':flags=lanczos`
+    );
   }
 
-  // 3. Sharpen (unsharp) - Upgraded to dual-stage multi-scale sharpening for phenomenal clarity and detail definition
+  // 3. Sharpen (unsharp or CAS)
   if (options.sharpenAmount && options.sharpenAmount > 0) {
-    const amount1 = Math.min(1.5, options.sharpenAmount * 0.8).toFixed(2);
-    const amount2 = Math.min(1.5, options.sharpenAmount * 1.2).toFixed(2);
-    
-    let matrixSize = 7; // Default 7x7 for 1080p and original
-    if (options.resolution === '4k') {
-      matrixSize = 11; // 11x11 matrix for 4K outlines
-    } else if (options.resolution === '2k') {
-      matrixSize = 9;  // 9x9 matrix for 2K outlines
+    if (options.sharpenMethod === 'cas') {
+      // AMD CAS strength is 0 to 1
+      const strength = Math.min(1.0, options.sharpenAmount).toFixed(2);
+      filters.push(`cas=strength=${strength}`);
+    } else {
+      // Default: unsharp
+      const amount1 = Math.min(3.5, options.sharpenAmount * 0.8).toFixed(2);
+      const amount2 = Math.min(3.5, options.sharpenAmount * 1.2).toFixed(2);
+
+      let matrixSize = 7;
+      if (options.resolution === '4k') {
+        matrixSize = 11;
+      } else if (options.resolution === '2k') {
+        matrixSize = 9;
+      }
+      filters.push(`unsharp=5:5:${amount1}:5:5:0.0`);
+      filters.push(
+        `unsharp=${matrixSize}:${matrixSize}:${amount2}:${matrixSize}:${matrixSize}:0.0`
+      );
     }
-    
-    // Stage 1: Fine-scale matrix (5x5) for high-frequency details (hair, textures)
-    filters.push(`unsharp=5:5:${amount1}:5:5:0.0`);
-    // Stage 2: Medium-scale matrix (7x7 / 9x9 / 11x11) for structural edges and outlines
-    filters.push(`unsharp=${matrixSize}:${matrixSize}:${amount2}:${matrixSize}:${matrixSize}:0.0`);
   }
 
   // 4. Color / Contrast / Brightness / Saturation
@@ -787,7 +1168,6 @@ ipcMain.handle('media-enhance', async (event, { inputPath, type, options }) => {
   }
 
   try {
-    // Run FFmpeg with extended buffer (50MB) and suppressed progress logs (-loglevel error)
     await execAsync(command, { maxBuffer: 1024 * 1024 * 50 });
     if (fs.existsSync(outputPath)) {
       return { ok: true, path: outputPath };
@@ -803,7 +1183,7 @@ ipcMain.handle('media-enhance', async (event, { inputPath, type, options }) => {
       ok: false,
       error: isNotFound
         ? 'Vui lòng cài đặt FFmpeg và thêm vào PATH để sử dụng tính năng này.'
-        : `Lỗi FFmpeg: ${error.message}`
+        : `Lỗi FFmpeg: ${error.message}`,
     };
   }
 });
@@ -814,7 +1194,9 @@ ipcMain.handle('lofi-search-metadata', async (event, { url }) => {
   const execAsync = util.promisify(exec);
 
   try {
-    const { stdout } = await execAsync(`yt-dlp --print "%(title)s|%(duration_string)s" --no-playlist "${url}"`);
+    const { stdout } = await execAsync(
+      `yt-dlp --print "%(title)s|%(duration_string)s" --no-playlist "${url}"`
+    );
     const parts = stdout.trim().split('|');
     if (parts.length >= 2) {
       return { ok: true, title: parts[0], duration: parts[1] };
@@ -833,20 +1215,24 @@ ipcMain.handle('lofi-search-beats', async (event, { key, bpm }) => {
 
   const query = `Lofi type beat ${key} ${bpm} bpm`;
   try {
-    const { stdout } = await execAsync(`yt-dlp --print "%(title)s|%(id)s|%(duration_string)s" --no-playlist "ytsearch5:${query}"`);
+    const { stdout } = await execAsync(
+      `yt-dlp --print "%(title)s|%(id)s|%(duration_string)s" --no-playlist "ytsearch5:${query}"`
+    );
     const lines = stdout.trim().split('\n');
-    const results = lines.map(line => {
-      const parts = line.split('|');
-      if (parts.length >= 3) {
-        return {
-          title: parts[0],
-          id: parts[1],
-          url: `https://www.youtube.com/watch?v=${parts[1]}`,
-          duration: parts[2]
-        };
-      }
-      return null;
-    }).filter(Boolean);
+    const results = lines
+      .map((line) => {
+        const parts = line.split('|');
+        if (parts.length >= 3) {
+          return {
+            title: parts[0],
+            id: parts[1],
+            url: `https://www.youtube.com/watch?v=${parts[1]}`,
+            duration: parts[2],
+          };
+        }
+        return null;
+      })
+      .filter(Boolean);
 
     return { ok: true, results };
   } catch (error) {
@@ -888,9 +1274,508 @@ ipcMain.handle('lofi-download-pair', async (event, { url, beatUrl, title }) => {
   }
 });
 
+// ==========================================
+// BATCH IMAGE GENERATOR IPC HANDLERS
+// ==========================================
+
+ipcMain.handle('select-directory', async () => {
+  const { dialog } = require('electron');
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory', 'createDirectory'],
+    title: 'Chọn thư mục lưu kết quả',
+  });
+  if (result.canceled) {
+    return null;
+  }
+  return result.filePaths[0];
+});
+
+ipcMain.handle(
+  'gpt-generate-blend-prompt',
+  async (event, { productImageBase64, modelImageBase64, apiKey, provider, geminiModel }) => {
+    const axios = require('axios');
+    try {
+      // Rút trích base64 sạch (loại bỏ data:image/...;base64,)
+      const cleanProduct = productImageBase64.replace(/^data:image\/\w+;base64,/, '');
+      const cleanModel = modelImageBase64.replace(/^data:image\/\w+;base64,/, '');
+
+      const systemPrompt = `You are an expert AI prompt engineer.
+Analyze the product in the product image and the style, clothing, lighting, pose, and background in the model/scene image.
+Create a highly detailed English prompt to blend this product onto the model or scene realistically.
+Specify the exact product placement, lighting angles, shadows, camera lenses, and scenic styling matching the model image.
+Return ONLY the final English prompt string. DO NOT include markdown, formatting, or introduction.`;
+
+      if (provider === 'gemini') {
+        const modelsToTry = [
+          geminiModel,
+          'gemini-2.5-flash',
+          'gemini-2.0-flash',
+          'gemini-3.5-flash',
+          'gemini-1.5-flash',
+        ].filter((m, index, self) => m && self.indexOf(m) === index);
+
+        let response;
+        let lastError = null;
+        let successfulModel = '';
+
+        for (const model of modelsToTry) {
+          try {
+            const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`;
+            response = await axios.post(
+              url,
+              {
+                contents: [
+                  {
+                    parts: [
+                      { text: systemPrompt },
+                      { inlineData: { mimeType: 'image/jpeg', data: cleanProduct } },
+                      { inlineData: { mimeType: 'image/jpeg', data: cleanModel } },
+                    ],
+                  },
+                ],
+              },
+              {
+                headers: { 'Content-Type': 'application/json' },
+              }
+            );
+            successfulModel = model;
+            break;
+          } catch (v1Error) {
+            const is404 =
+              v1Error.response?.status === 404 ||
+              v1Error.response?.data?.error?.message?.includes('not found') ||
+              v1Error.message?.includes('404');
+            if (!is404) {
+              throw v1Error;
+            }
+            console.warn(
+              `Thử Gemini v1 thất bại cho model ${model} (404), chuyển sang v1beta hoặc model khác...`
+            );
+            lastError = v1Error;
+
+            try {
+              const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+              response = await axios.post(
+                url,
+                {
+                  contents: [
+                    {
+                      parts: [
+                        { text: systemPrompt },
+                        { inlineData: { mimeType: 'image/jpeg', data: cleanProduct } },
+                        { inlineData: { mimeType: 'image/jpeg', data: cleanModel } },
+                      ],
+                    },
+                  ],
+                },
+                {
+                  headers: { 'Content-Type': 'application/json' },
+                }
+              );
+              successfulModel = model;
+              break;
+            } catch (v1betaError) {
+              console.warn(
+                `Thử Gemini v1beta thất bại cho model ${model}. Sẽ thử model tiếp theo...`
+              );
+              lastError = v1betaError;
+            }
+          }
+        }
+
+        if (!response) {
+          throw lastError || new Error('Tất cả các mô hình Gemini thử nghiệm đều thất bại.');
+        }
+
+        const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!text) throw new Error('Không nhận được prompt từ Gemini API');
+        console.log(`Đã tạo prompt thành công bằng mô hình: ${successfulModel}`);
+        return { ok: true, prompt: text.trim() };
+      } else {
+        // Mặc định dùng OpenAI GPT-4o
+        const url = 'https://api.openai.com/v1/chat/completions';
+        const response = await axios.post(
+          url,
+          {
+            model: 'gpt-4o',
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  { type: 'text', text: systemPrompt },
+                  {
+                    type: 'image_url',
+                    image_url: { url: `data:image/jpeg;base64,${cleanProduct}` },
+                  },
+                  { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${cleanModel}` } },
+                ],
+              },
+            ],
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${apiKey}`,
+            },
+          }
+        );
+
+        const text = response.data?.choices?.[0]?.message?.content;
+        if (!text) throw new Error('Không nhận được prompt từ OpenAI API');
+        return { ok: true, prompt: text.trim() };
+      }
+    } catch (error) {
+      console.error('Lỗi tạo prompt phối ghép:', error.response?.data || error.message);
+      return { ok: false, error: error.response?.data?.error?.message || error.message };
+    }
+  }
+);
+
+ipcMain.handle(
+  'ai-generate-blended-image',
+  async (event, { prompt, geminiKey, outputDir, index, imagenModel }) => {
+    const axios = require('axios');
+    const fs = require('fs');
+    const path = require('path');
+
+    try {
+      const modelsToTry = [
+        imagenModel,
+        'imagen-4.0-generate-001',
+        'imagen-3.0-generate-002',
+        'imagen-4.0-ultra-generate-001',
+        'imagen-4.0-fast-generate-001',
+      ].filter((m, index, self) => m && self.indexOf(m) === index);
+
+      let response;
+      let lastError = null;
+      let successfulModel = '';
+
+      for (const model of modelsToTry) {
+        const isPredictApi =
+          model.includes('imagen-4.0') ||
+          model.includes('imagen-5.0') ||
+          model.includes('imagen-large') ||
+          model.includes('imagen-ultra') ||
+          model.includes('imagen-fast');
+
+        const endpointsToTry = isPredictApi
+          ? ['predict', 'generateImages']
+          : ['generateImages', 'predict'];
+        let attemptSuccess = false;
+
+        for (const endpointType of endpointsToTry) {
+          try {
+            if (endpointType === 'predict') {
+              const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:predict?key=${geminiKey}`;
+              const payload = {
+                instances: [
+                  {
+                    prompt: prompt,
+                  },
+                ],
+                parameters: {
+                  sampleCount: 1,
+                  aspectRatio: '1:1',
+                  outputMimeType: 'image/jpeg',
+                  personGeneration: 'ALLOW_ADULT',
+                },
+              };
+              response = await axios.post(url, payload, {
+                headers: { 'Content-Type': 'application/json' },
+              });
+
+              const imageBytes = response.data?.predictions?.[0]?.bytesBase64Encoded;
+              if (imageBytes) {
+                response.data.extractedImageBytes = imageBytes;
+                attemptSuccess = true;
+                break;
+              }
+            } else {
+              const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateImages?key=${geminiKey}`;
+              const payload = {
+                prompt: prompt,
+                numberOfImages: 1,
+                outputMimeType: 'image/jpeg',
+                aspectRatio: '1:1',
+                parameters: {
+                  sampleCount: 1,
+                  personGeneration: 'ALLOW_ADULT',
+                },
+              };
+              response = await axios.post(url, payload, {
+                headers: { 'Content-Type': 'application/json' },
+              });
+
+              const imageBytes = response.data?.generatedImages?.[0]?.image?.imageBytes;
+              if (imageBytes) {
+                response.data.extractedImageBytes = imageBytes;
+                attemptSuccess = true;
+                break;
+              }
+            }
+          } catch (err) {
+            const errMsg = err.response?.data?.error?.message || err.message || '';
+            if (
+              errMsg.includes('only available on paid plans') ||
+              errMsg.includes('upgrade your account')
+            ) {
+              throw new Error(
+                'Mô hình Imagen yêu cầu tài khoản Gemini API trả phí (Pay-as-you-go). Vui lòng kích hoạt thanh toán (billing) tại https://aistudio.google.com/ hoặc https://ai.dev/projects để sử dụng tính năng ghép ảnh.'
+              );
+            }
+            const is404 =
+              err.response?.status === 404 ||
+              err.response?.data?.error?.message?.includes('not found') ||
+              err.message?.includes('404');
+            if (!is404) {
+              console.error(
+                `Lỗi gọi model ${model} với endpoint ${endpointType}:`,
+                err.response?.data || err.message
+              );
+            }
+            lastError = err;
+          }
+        }
+
+        if (attemptSuccess) {
+          successfulModel = model;
+          break;
+        } else {
+          console.warn(`Thử Imagen thất bại cho model ${model}. Sẽ thử model tiếp theo...`);
+        }
+      }
+
+      if (!response) {
+        throw lastError || new Error('Tất cả các mô hình Imagen thử nghiệm đều thất bại.');
+      }
+
+      const imageBytes =
+        response?.data?.extractedImageBytes ||
+        response?.data?.generatedImages?.[0]?.image?.imageBytes;
+      if (!imageBytes) {
+        throw new Error('Imagen API không trả về hình ảnh');
+      }
+
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+      }
+
+      const filename = `blended_product_${index || Date.now()}_${Date.now()}.jpg`;
+      const outputPath = path.join(outputDir, filename);
+      fs.writeFileSync(outputPath, Buffer.from(imageBytes, 'base64'));
+
+      console.log(`Đã phối ghép ảnh thành công bằng mô hình: ${successfulModel}`);
+      return { ok: true, filePath: outputPath };
+    } catch (error) {
+      console.error('Lỗi ghép ảnh bằng Imagen:', error.response?.data || error.message);
+      return { ok: false, error: error.response?.data?.error?.message || error.message };
+    }
+  }
+);
+
+// Helper tải lên tệp tạm thời cho Replicate API
+async function uploadToTmpfilesLocal(filePath) {
+  const fs = require('fs');
+  const path = require('path');
+  const { Blob } = require('buffer');
+
+  const fileBuffer = fs.readFileSync(filePath);
+  const fileBlob = new Blob([fileBuffer], { type: 'image/jpeg' });
+  const formData = new FormData();
+  formData.append('file', fileBlob, path.basename(filePath));
+
+  const uploadRes = await fetch('https://tmpfiles.org/api/v1/upload', {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!uploadRes.ok) throw new Error('Không thể tải ảnh lên cloud tạm thời');
+  const uploadJson = await uploadRes.json();
+  const rawUrl = uploadJson.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
+  return rawUrl;
+}
+
+ipcMain.handle(
+  'ai-image-to-video',
+  async (
+    event,
+    { imagePath, motionPrompt, replicateKey, geminiKey, provider, videoModel, outputDir, index }
+  ) => {
+    const axios = require('axios');
+    const fs = require('fs');
+    const path = require('path');
+
+    try {
+      if (provider === 'google') {
+        const model = videoModel || 'veo-2.0-generate-001';
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:predictLongRunning?key=${geminiKey}`;
+
+        const payload = {
+          instances: [
+            {
+              prompt: motionPrompt || 'zoom in slowly, high quality, realistic motion',
+              image: {
+                bytesBase64Encoded: fs.readFileSync(imagePath).toString('base64'),
+                mimeType: 'image/jpeg',
+              },
+            },
+          ],
+          parameters: {
+            aspectRatio: '1:1',
+            durationSeconds: 5,
+          },
+        };
+
+        const createRes = await axios.post(url, payload, {
+          headers: { 'Content-Type': 'application/json' },
+        });
+
+        const operationName = createRes.data?.name;
+        if (!operationName)
+          throw new Error('Không khởi tạo được tiến trình tạo video trên Google Veo');
+
+        // Polling LRO
+        let done = false;
+        const maxRetries = 60; // 5 mins
+        let attempts = 0;
+        let finalResponse = null;
+
+        while (!done && attempts < maxRetries) {
+          await new Promise((r) => setTimeout(r, 5000));
+          attempts++;
+
+          const checkUrl = `https://generativelanguage.googleapis.com/v1beta/${operationName}?key=${geminiKey}`;
+          const checkRes = await axios.get(checkUrl);
+
+          if (checkRes.data?.error) {
+            throw new Error(`Google Veo trả về lỗi: ${checkRes.data.error.message}`);
+          }
+
+          if (checkRes.data?.done) {
+            done = true;
+            finalResponse = checkRes.data.response;
+            break;
+          }
+        }
+
+        if (!done || !finalResponse) {
+          throw new Error('Hết thời gian chờ tạo video từ Google Veo');
+        }
+
+        const videoUri =
+          finalResponse?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri ||
+          finalResponse?.predictions?.[0]?.video?.uri ||
+          finalResponse?.predictions?.[0]?.uri;
+
+        if (!videoUri) {
+          throw new Error('Google Veo không trả về đường dẫn tải video');
+        }
+
+        const downloadUrl = videoUri.includes('?')
+          ? `${videoUri}&key=${geminiKey}`
+          : `${videoUri}?key=${geminiKey}`;
+        const videoRes = await axios.get(downloadUrl, { responseType: 'arraybuffer' });
+
+        if (!fs.existsSync(outputDir)) {
+          fs.mkdirSync(outputDir, { recursive: true });
+        }
+
+        const filename = `blended_video_${index || Date.now()}_${Date.now()}.mp4`;
+        const outputPath = path.join(outputDir, filename);
+        fs.writeFileSync(outputPath, Buffer.from(videoRes.data));
+
+        return { ok: true, filePath: outputPath };
+      }
+
+      // 1. Tải ảnh lên tmpfiles để có link URL công khai cho Replicate
+      let tempImageUrl = '';
+      try {
+        tempImageUrl = await uploadToTmpfilesLocal(imagePath);
+      } catch (err) {
+        throw new Error(`Lỗi tải ảnh lên cloud tạm: ${err.message}`);
+      }
+
+      // 2. Gọi Replicate Luma Dream Machine
+      const replicateUrl = 'https://api.replicate.com/v1/predictions';
+      const createRes = await axios.post(
+        replicateUrl,
+        {
+          version: 'a717ca0a3311e998782a21e64ffc9ee1738c64c7ad3db6eeeb3c2f1f516a27e7', // Luma Dream Machine
+          input: {
+            prompt: motionPrompt || 'zoom in slowly, high quality, realistic motion',
+            image_url: tempImageUrl,
+          },
+        },
+        {
+          headers: {
+            Authorization: `Token ${replicateKey}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      const predictionId = createRes.data?.id;
+      if (!predictionId) throw new Error('Không khởi tạo được tiến trình tạo video trên Replicate');
+
+      // 3. Polling kiểm tra trạng thái
+      let status = createRes.data?.status;
+      let videoUrl = null;
+      const maxRetries = 60; // 5 phút tối đa
+      let attempts = 0;
+
+      while (status !== 'succeeded' && status !== 'failed' && attempts < maxRetries) {
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        attempts++;
+
+        const checkRes = await axios.get(`${replicateUrl}/${predictionId}`, {
+          headers: { Authorization: `Token ${replicateKey}` },
+        });
+        status = checkRes.data?.status;
+
+        if (status === 'succeeded') {
+          videoUrl = checkRes.data?.output;
+          if (Array.isArray(videoUrl)) videoUrl = videoUrl[0]; // Có thể trả về mảng link
+          break;
+        }
+      }
+
+      if (status !== 'succeeded' || !videoUrl) {
+        throw new Error('Quá trình tạo video thất bại hoặc hết thời gian chờ (timeout)');
+      }
+
+      // 4. Tải video kết quả về thư mục đầu ra
+      const videoRes = await axios.get(videoUrl, { responseType: 'arraybuffer' });
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+      }
+
+      const filename = `motion_video_${index || Date.now()}_${Date.now()}.mp4`;
+      const outputPath = path.join(outputDir, filename);
+      fs.writeFileSync(outputPath, Buffer.from(videoRes.data));
+
+      return { ok: true, filePath: outputPath };
+    } catch (error) {
+      console.error('Lỗi tạo video chuyển động:', error.response?.data || error.message);
+      const errMsg = error.response?.data?.error?.message || error.message || '';
+      if (
+        errMsg.includes('only available on paid plans') ||
+        errMsg.includes('upgrade your account')
+      ) {
+        return {
+          ok: false,
+          error:
+            'Mô hình Google Veo yêu cầu tài khoản Gemini API trả phí (Pay-as-you-go). Vui lòng kích hoạt thanh toán (billing) tại https://aistudio.google.com/ hoặc https://ai.dev/projects để sử dụng.',
+        };
+      }
+      return { ok: false, error: error.response?.data?.error?.message || error.message };
+    }
+  }
+);
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  cancelActiveEnhanceJob();
 });
 
 app.on('window-all-closed', () => {

@@ -186,123 +186,56 @@ const MediaEnhancer = () => {
             </div>
 
             <div className="settings-grid">
-              <Row gutter={[24, 24]}>
+              <Row gutter={[20, 20]}>
+                {/* AI Model Selection */}
                 <Col span={24}>
-                  <div className="enhance-option-box">
-                    <div className="option-header">
-                      <span className="option-title">Độ sắc nét</span>
-                      <span className="option-value">{options.sharpenAmount.toFixed(1)}</span>
-                    </div>
-                    <Slider
-                      min={0.0}
-                      max={2.0}
-                      step={0.1}
-                      value={options.sharpenAmount}
-                      onChange={(val) => setOptions({ ...options, sharpenAmount: val })}
-                      className="custom-slider"
-                      disabled={loading}
-                    />
+                  <div style={{ fontWeight: 600, marginBottom: '8px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Cpu size={14} style={{ color: '#0d9488' }} />
+                    Mô hình AI sử dụng:
+                  </div>
+                  <Segmented
+                    block
+                    value={options.aiModel || 'realesr-animevideov3'}
+                    onChange={(val) => setOptions({ ...options, aiModel: val })}
+                    options={[
+                      { label: 'Tối ưu tốc độ (Video/Nhanh)', value: 'realesr-animevideov3' },
+                      { label: 'Chất lượng cao (Ảnh/Chậm)', value: 'realesrgan-x4plus' },
+                    ]}
+                    className="custom-segmented"
+                    disabled={loading}
+                  />
+                  <div
+                    style={{
+                      color: '#0d9488',
+                      fontSize: '12px',
+                      marginTop: '8px',
+                      fontWeight: 500,
+                    }}
+                  >
+                    ✓ Sử dụng mô hình AI Real-ESRGAN chạy bằng GPU của máy tính. Miễn phí & Không giới hạn!
                   </div>
                 </Col>
 
+                {/* Always show resolution */}
                 <Col span={24}>
-                  <div className="enhance-option-box">
-                    <div className="option-header">
-                      <span className="option-title">Độ phân giải đầu ra (Super Resolution)</span>
-                    </div>
+                  <Divider
+                    plain
+                    style={{ margin: '8px 0', fontSize: '12px', fontWeight: 600, color: '#94a3b8' }}
+                  >
+                    ĐỘ PHÂN GIẢI ĐẦU RA
+                  </Divider>
+                  <div className="enhance-option-box" style={{ marginTop: '8px' }}>
                     <Segmented
                       block
                       value={options.resolution}
                       onChange={handleResolutionChange}
                       options={[
-                        { label: 'Gốc', value: 'original' },
-                        { label: '1080p', value: '1080p' },
-                        { label: '2K', value: '2k' },
-                        { label: '4K', value: '4k' },
+                        { label: 'Độ phân giải gốc', value: 'original' },
+                        { label: '1080p Full HD', value: '1080p' },
+                        { label: '2K Quad HD', value: '2k' },
+                        { label: '4K Ultra HD', value: '4k' },
                       ]}
                       className="custom-segmented"
-                      disabled={loading}
-                    />
-                  </div>
-                </Col>
-
-                <Col xs={24} md={12}>
-                  <div className="enhance-option-box">
-                    <div className="option-header">
-                      <span
-                        className="option-title"
-                        style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
-                      >
-                        <Cpu size={16} style={{ color: '#0d9488' }} />
-                        Khử nhiễu
-                      </span>
-                      <span className="option-value">
-                        {options.denoise === 0.0 ? 'Tắt' : `${options.denoise.toFixed(1)}x`}
-                      </span>
-                    </div>
-                    <Slider
-                      min={0.0}
-                      max={2.0}
-                      step={0.1}
-                      value={options.denoise}
-                      onChange={(val) => setOptions({ ...options, denoise: val })}
-                      className="custom-slider"
-                      disabled={loading}
-                    />
-                  </div>
-                </Col>
-
-                <Col xs={24} md={12}>
-                  <div className="enhance-option-box">
-                    <div className="option-header">
-                      <span className="option-title">Độ tương phản</span>
-                      <span className="option-value">{options.contrast.toFixed(2)}</span>
-                    </div>
-                    <Slider
-                      min={0.5}
-                      max={1.5}
-                      step={0.05}
-                      value={options.contrast}
-                      onChange={(val) => setOptions({ ...options, contrast: val })}
-                      className="custom-slider"
-                      disabled={loading}
-                    />
-                  </div>
-                </Col>
-
-                <Col xs={24} md={12}>
-                  <div className="enhance-option-box">
-                    <div className="option-header">
-                      <span className="option-title">Độ sáng</span>
-                      <span className="option-value">
-                        {(options.brightness >= 0 ? '+' : '') + options.brightness.toFixed(2)}
-                      </span>
-                    </div>
-                    <Slider
-                      min={-0.3}
-                      max={0.3}
-                      step={0.02}
-                      value={options.brightness}
-                      onChange={(val) => setOptions({ ...options, brightness: val })}
-                      className="custom-slider"
-                      disabled={loading}
-                    />
-                  </div>
-                </Col>
-
-                <Col xs={24} md={12}>
-                  <div className="enhance-option-box">
-                    <div className="option-header">
-                      <span className="option-title">Độ bão hòa màu</span>
-                      <span className="option-value">{options.saturation.toFixed(2)}</span>
-                    </div>
-                    <Slider
-                      min={0.5}
-                      max={2.0}
-                      step={0.05}
-                      value={options.saturation}
-                      onChange={(val) => setOptions({ ...options, saturation: val })}
-                      className="custom-slider"
                       disabled={loading}
                     />
                   </div>

@@ -56,9 +56,21 @@ contextBridge.exposeInMainWorld('electron', {
   lofiDownloadPair: (url, beatUrl, title) => {
     return ipcRenderer.invoke('lofi-download-pair', { url, beatUrl, title });
   },
+  selectDirectory: () => {
+    return ipcRenderer.invoke('select-directory');
+  },
+  gptGenerateBlendPrompt: (data) => {
+    return ipcRenderer.invoke('gpt-generate-blend-prompt', data);
+  },
+  aiGenerateBlendedImage: (data) => {
+    return ipcRenderer.invoke('ai-generate-blended-image', data);
+  },
+  aiImageToVideo: (data) => {
+    return ipcRenderer.invoke('ai-image-to-video', data);
+  },
   on: (channel, func) => {
     // Các kênh được phép lắng nghe
-    const validChannels = ['autoclick-status-changed'];
+    const validChannels = ['autoclick-status-changed', 'media-enhance-progress'];
     if (validChannels.includes(channel)) {
       const subscription = (event, ...args) => func(...args);
       ipcRenderer.on(channel, subscription);
