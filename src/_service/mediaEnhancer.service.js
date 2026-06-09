@@ -29,12 +29,18 @@ export const MediaEnhancerService = {
         body: formData,
       });
 
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || 'Server xử lý thất bại.');
+      const text = await response.text();
+      let result;
+      try {
+        result = JSON.parse(text);
+      } catch {
+        throw new Error(`Lỗi hệ thống (${response.status}): Phản hồi từ máy chủ không hợp lệ.`);
       }
 
-      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || 'Server xử lý thất bại.');
+      }
+
       return result;
     }
   },

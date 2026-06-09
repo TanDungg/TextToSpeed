@@ -1,6 +1,20 @@
 // src/_service/videoRemaker.service.js
 const isElectronEnv = () => window.electron && !window.electron.isWebMock;
 
+const handleJsonResponse = async (response, defaultErrorMsg) => {
+  const text = await response.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return { ok: false, error: `Lỗi hệ thống (${response.status}): Phản hồi từ máy chủ không hợp lệ.` };
+  }
+  if (!response.ok) {
+    return { ok: false, error: data.error || defaultErrorMsg };
+  }
+  return data;
+};
+
 export const VideoRemakerService = {
   checkEnv: async () => {
     if (isElectronEnv()) {
@@ -8,7 +22,8 @@ export const VideoRemakerService = {
     }
     try {
       const res = await fetch('/api/check-env');
-      return await res.json();
+      const text = await res.text();
+      return JSON.parse(text);
     } catch {
       return { ffmpeg: false, ytdlp: false };
     }
@@ -23,11 +38,7 @@ export const VideoRemakerService = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url }),
     });
-    if (!response.ok) {
-      const err = await response.json();
-      return { ok: false, error: err.error || 'Tải video từ Cloud thất bại.' };
-    }
-    return await response.json();
+    return await handleJsonResponse(response, 'Tải video từ Cloud thất bại.');
   },
 
   videoRemake: async (videoPath, options) => {
@@ -39,11 +50,7 @@ export const VideoRemakerService = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ videoPath, options: typeof options === 'string' ? options : JSON.stringify(options) }),
     });
-    if (!response.ok) {
-      const err = await response.json();
-      return { ok: false, error: err.error || 'Lách video thất bại trên Cloud.' };
-    }
-    return await response.json();
+    return await handleJsonResponse(response, 'Lách video thất bại trên Cloud.');
   },
 
   extractAudio: async (videoPath) => {
@@ -55,11 +62,7 @@ export const VideoRemakerService = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ videoPath }),
     });
-    if (!response.ok) {
-      const err = await response.json();
-      return { ok: false, error: err.error || 'Trích xuất âm thanh từ Cloud thất bại.' };
-    }
-    return await response.json();
+    return await handleJsonResponse(response, 'Trích xuất âm thanh từ Cloud thất bại.');
   },
 
   transcribeAudio: async (audioPath, apiKey) => {
@@ -71,11 +74,7 @@ export const VideoRemakerService = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ audioPath, apiKey }),
     });
-    if (!response.ok) {
-      const err = await response.json();
-      return { ok: false, error: err.error || 'Nhận diện giọng nói từ Cloud thất bại.' };
-    }
-    return await response.json();
+    return await handleJsonResponse(response, 'Nhận diện giọng nói từ Cloud thất bại.');
   },
 
   readFileBase64: async (filePath) => {
@@ -87,11 +86,7 @@ export const VideoRemakerService = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ filePath }),
     });
-    if (!response.ok) {
-      const err = await response.json();
-      return { ok: false, error: err.error || 'Đọc file từ Cloud thất bại.' };
-    }
-    return await response.json();
+    return await handleJsonResponse(response, 'Đọc file từ Cloud thất bại.');
   },
 
   ttsRequest: async (url, options = {}) => {
@@ -103,11 +98,7 @@ export const VideoRemakerService = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url, options }),
     });
-    if (!response.ok) {
-      const err = await response.json();
-      return { ok: false, error: err.error || 'Yêu cầu Proxy thất bại.' };
-    }
-    const result = await response.json();
+    const result = await handleJsonResponse(response, 'Yêu cầu Proxy thất bại.');
     if (result.ok && result.isBinary && typeof result.data === 'string') {
       const binaryString = window.atob(result.data);
       const bytes = new Uint8Array(binaryString.length);
@@ -135,10 +126,16 @@ export const VideoRemakerService = {
       method: 'POST',
       body: formData,
     });
-    if (!response.ok) {
-      throw new Error('Không thể lưu file âm thanh tạm thời trên Cloud.');
+    const text = await response.text();
+    let uploadData;
+    try {
+      uploadData = JSON.parse(text);
+    } catch {
+      throw new Error(`Lỗi hệ thống (${response.status}): Phản hồi từ máy chủ không hợp lệ.`);
     }
-    const uploadData = await response.json();
+    if (!response.ok) {
+      throw new Error(uploadData.error || 'Không thể lưu file âm thanh tạm thời trên Cloud.');
+    }
     return uploadData.path;
   },
 

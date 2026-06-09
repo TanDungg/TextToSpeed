@@ -24,10 +24,17 @@ export const AuthService = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token }),
       });
-      if (!response.ok) {
-        throw new Error('Xác thực token thất bại.');
+      const text = await response.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`Lỗi hệ thống (${response.status}): Phản hồi từ máy chủ không hợp lệ.`);
       }
-      return await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Xác thực token thất bại.');
+      }
+      return data;
     }
   },
 

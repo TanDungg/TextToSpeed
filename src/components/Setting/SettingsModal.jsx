@@ -13,11 +13,25 @@ const SettingsModal = ({ open, onCancel, settings, onSave }) => {
     return saved ? JSON.parse(saved) : null;
   });
 
+  const [cookiesConfigured, setCookiesConfigured] = useState(false);
+  const [cookieText, setCookieText] = useState('');
+  const [savingCookies, setSavingCookies] = useState(false);
+
+  const isElectron = window.electron && !window.electron.isWebMock;
+
   useEffect(() => {
     if (open) {
       form.setFieldsValue(settings);
+      if (!isElectron) {
+        fetch('/api/check-cookies')
+          .then((res) => res.json())
+          .then((data) => {
+            setCookiesConfigured(!!data.configured);
+          })
+          .catch((err) => console.error('Lỗi kiểm tra cookies:', err));
+      }
     }
-  }, [open, settings, form]);
+  }, [open, settings, form, isElectron]);
 
   const checkSupportedModels = async () => {
     const key = form.getFieldValue('geminiKey');
@@ -303,6 +317,109 @@ const SettingsModal = ({ open, onCancel, settings, onSave }) => {
           showIcon
           style={{ marginBottom: '24px' }}
         />
+
+        {!isElectron && (
+          <>
+            <Divider orientation="left">
+              <Space>
+                <LinkOutlined /> Cấu hình YouTube Cookies (Bypass Bot Check)
+              </Space>
+            </Divider>
+            
+            <Alert
+              message={
+                <div style={{ fontSize: '12px' }}>
+                  <Text strong>YouTube Cookies (Vượt lỗi "Sign in to confirm you're not a bot" trên server):</Text>
+                  <br />
+                  Trạng thái trên Server: {cookiesConfigured ? <Tag color="success">Đã cấu hình ✅</Tag> : <Tag color="error">Chưa cấu hình ❌</Tag>}
+                  <br />
+                  <div style={{ marginTop: '8px' }}>
+                    1. Sử dụng tiện ích mở rộng (ví dụ: "Get cookies.txt LOCALLY") trên trình duyệt đã đăng nhập YouTube.
+                    <br />
+                    2. Xuất (Export) cookies dưới dạng Netscape format.
+                    <br />
+                    3. Dán toàn bộ nội dung file đó vào ô dưới đây và bấm cập nhật.
+                  </div>
+                </div>
+              }
+              type="warning"
+              showIcon
+              style={{ marginBottom: '16px' }}
+            />
+
+            <Form.Item label="Nội dung file cookies.txt">
+              <Input.TextArea
+                rows={4}
+                value={cookieText}
+                onChange={(e) => setCookieText(e.target.value)}
+                placeholder="# Netscape HTTP Cookie File..."
+              />
+            </Form.Item>
+            
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '24px' }}>
+              <Button
+                type="primary"
+                loading={savingCookies}
+                onClick={async () => {
+                  if (!cookieText.trim()) {
+                    message.warning('Vui lòng nhập nội dung cookies trước khi cập nhật.');
+                    return;
+                  }
+                  setSavingCookies(true);
+                  try {
+                    const res = await fetch('/api/save-cookies', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ cookies: cookieText }),
+                    });
+                    const data = await res.json();
+                    if (res.ok && data.ok) {
+                      message.success('Đã cấu hình YouTube Cookies trên server thành công!');
+                      setCookiesConfigured(true);
+                      setCookieText('');
+                    } else {
+                      throw new Error(data.error || 'Lưu thất bại.');
+                    }
+                  } catch (err) {
+                    message.error(`Lỗi lưu cookies: ${err.message}`);
+                  } finally {
+                    setSavingCookies(false);
+                  }
+                }}
+              >
+                Cập nhật Cookies lên Server
+              </Button>
+              {cookiesConfigured && (
+                <Button
+                  danger
+                  onClick={async () => {
+                    setSavingCookies(true);
+                    try {
+                      const res = await fetch('/api/save-cookies', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ cookies: '' }),
+                      });
+                      const data = await res.json();
+                      if (res.ok && data.ok) {
+                        message.success('Đã xóa YouTube Cookies trên server thành công!');
+                        setCookiesConfigured(false);
+                      } else {
+                        throw new Error(data.error || 'Xóa thất bại.');
+                      }
+                    } catch (err) {
+                      message.error(`Lỗi xóa cookies: ${err.message}`);
+                    } finally {
+                      setSavingCookies(false);
+                    }
+                  }}
+                >
+                  Xóa Cookies trên Server
+                </Button>
+              )}
+            </div>
+          </>
+        )}
 
         <div
           style={{
