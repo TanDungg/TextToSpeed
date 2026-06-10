@@ -336,6 +336,41 @@ async function handleVideoDownload(event, { url }) {
 
 ipcMain.handle('video-download', handleVideoDownload);
 
+function scaleSrtTimestamps(srtText, speed) {
+  if (!srtText || speed === 1.0) return srtText;
+  
+  const formatTime = (ms) => {
+    const pad = (num, size) => ('000' + num).slice(-size);
+    const hrs = Math.floor(ms / 3600000);
+    const mins = Math.floor((ms % 3600000) / 60000);
+    const secs = Math.floor((ms % 60000) / 1000);
+    const msec = Math.floor(ms % 1000);
+    return `${pad(hrs, 2)}:${pad(mins, 2)}:${pad(secs, 2)},${pad(msec, 3)}`;
+  };
+
+  const parseTime = (timeStr) => {
+    const match = timeStr.match(/(\d{2}):(\d{2}):(\d{2})[,.](\d{3})/);
+    if (!match) return 0;
+    return (
+      parseInt(match[1]) * 3600000 +
+      parseInt(match[2]) * 60000 +
+      parseInt(match[3]) * 1000 +
+      parseInt(match[4])
+    );
+  };
+
+  return srtText.replace(
+    /(\d{2}:\d{2}:\d{2}[,.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,.]\d{3})/g,
+    (match, startStr, endStr) => {
+      const startMs = parseTime(startStr);
+      const endMs = parseTime(endStr);
+      const newStartMs = Math.round(startMs / speed);
+      const newEndMs = Math.round(endMs / speed);
+      return `${formatTime(newStartMs)} --> ${formatTime(newEndMs)}`;
+    }
+  );
+}
+
 async function handleVideoRemake(event, { inputPath, options }) {
   const fs = require('fs');
   const tempDir = path.join(app.getPath('downloads'), 'SmartRemaker', 'temp');
@@ -519,6 +554,26 @@ async function handleVideoRemake(event, { inputPath, options }) {
     const util = require('util');
     const execPromise = util.promisify(exec);
     await execPromise(command, { cwd: tempDir });
+
+    // Lưu tệp phụ đề dạng .txt và tệp âm thanh dạng .mp3 nếu chọn transcribe
+    if (options.transcribe) {
+      if (options.srtContent) {
+        const txtPath = outputPath.replace(/\.mp4$/i, '.txt');
+        const adjustedSrt = scaleSrtTimestamps(options.srtContent, speed);
+        fs.writeFileSync(txtPath, adjustedSrt, 'utf8');
+      }
+
+      if (options.originalAudioPath && fs.existsSync(options.originalAudioPath)) {
+        const finalAudioPath = outputPath.replace(/\.mp4$/i, '.mp3');
+        if (speed === 1.0) {
+          fs.copyFileSync(options.originalAudioPath, finalAudioPath);
+        } else {
+          // Tăng tốc tệp âm thanh gốc để khớp với tốc độ video mới
+          await execPromise(`ffmpeg -i "${options.originalAudioPath}" -filter:a "atempo=${speed}" -y "${finalAudioPath}"`);
+        }
+      }
+    }
+
     return { ok: true, path: outputPath };
   } catch (error) {
     console.error('Remake Error:', error.message);

@@ -16,7 +16,6 @@ import {
 } from 'antd';
 import {
   DownloadCloud,
-  Languages,
   Settings2,
   Zap,
   Info,
@@ -119,12 +118,6 @@ const VideoRemaker = ({ settings }) => {
                       />
                     </div>
                     <Checkbox
-                      checked={options.flip}
-                      onChange={(e) => setOptions({ ...options, flip: e.target.checked })}
-                    >
-                      Lật ngang video (Mirroring)
-                    </Checkbox>
-                    <Checkbox
                       checked={options.colorShift}
                       onChange={(e) => setOptions({ ...options, colorShift: e.target.checked })}
                     >
@@ -136,137 +129,29 @@ const VideoRemaker = ({ settings }) => {
                     >
                       Hiệu ứng góc tối (Vignette)
                     </Checkbox>
-                    <Checkbox
-                      checked={options.audioPitch}
-                      onChange={(e) => setOptions({ ...options, audioPitch: e.target.checked })}
-                    >
-                      Thay đổi âm thông (Audio Pitch 2%)
-                    </Checkbox>
-                    <Checkbox
-                      checked={options.audioDelay}
-                      onChange={(e) => setOptions({ ...options, audioDelay: e.target.checked })}
-                    >
-                      Độ trễ âm thanh & tiếng vang (Delay & Echo)
-                    </Checkbox>
                   </div>
                 </Col>
                 <Col span={24}>
                   <div className="section-label">
-                    <Languages size={18} />
-                    <span>Dịch & Tốc độ</span>
+                    <Settings2 size={18} />
+                    <span>Trích xuất & Tốc độ video</span>
                   </div>
                   <div className="translate-settings">
                     <Checkbox
-                      checked={options.translate}
-                      onChange={(e) => setOptions({ ...options, translate: e.target.checked })}
+                      checked={options.transcribe}
+                      onChange={(e) => setOptions({ ...options, transcribe: e.target.checked })}
                       style={{ marginBottom: 16 }}
                     >
-                      Dịch sang ngôn ngữ khác
+                      Trích xuất âm thanh & văn bản (Chuyển giọng nói thành text)
                     </Checkbox>
 
-                    {options.translate && (
-                      <div className="translate-options-box">
-                        <div style={{ marginBottom: 12 }}>
-                          <p style={{ marginBottom: 4, fontSize: 12, color: '#94a3b8' }}>
-                            Ngôn ngữ đích
-                          </p>
-                          <Select
-                            size="large"
-                            value={options.targetLang}
-                            style={{ width: '100%' }}
-                            onChange={(val) => setOptions({ ...options, targetLang: val })}
-                            options={[
-                              { value: 'vi', label: 'Tiếng Việt' },
-                              { value: 'en', label: 'Tiếng Anh' },
-                              { value: 'zh', label: 'Tiếng Trung' },
-                            ]}
-                            className="custom-select"
-                          />
-                        </div>
-
-                        <div style={{ marginBottom: 12 }}>
-                          <p style={{ marginBottom: 4, fontSize: 12, color: '#94a3b8' }}>
-                            Server Lồng tiếng
-                          </p>
-                          <Select
-                            size="large"
-                            value={options.ttsServer}
-                            style={{ width: '100%' }}
-                            onChange={(val) => {
-                              let defaultVoice = 'vi-VN-HoaiMyNeural';
-                              if (val === 'fpt') defaultVoice = 'banmai';
-                              if (val === 'google-cloud') defaultVoice = 'vi-VN-Neural2-A';
-                              setOptions({ ...options, ttsServer: val, ttsVoice: defaultVoice });
-                            }}
-                            options={[
-                              { label: 'Edge TTS (Free - Khuyên dùng)', value: 'edge' },
-                              { label: 'Google Dịch (Cơ bản)', value: 'google' },
-                              { label: 'Google Cloud (Chuyên nghiệp)', value: 'google-cloud' },
-                              { label: 'FPT.AI', value: 'fpt' },
-                              { label: 'ElevenLabs', value: 'elevenlabs' },
-                            ]}
-                            className="custom-select"
-                          />
-                        </div>
-
-                        <div style={{ marginBottom: 12 }}>
-                          <p style={{ marginBottom: 4, fontSize: 12, color: '#94a3b8' }}>
-                            Giọng đọc lồng tiếng
-                          </p>
-                          <Select
-                            size="large"
-                            value={options.ttsVoice}
-                            style={{ width: '100%' }}
-                            onChange={(val) => setOptions({ ...options, ttsVoice: val })}
-                            options={
-                              options.ttsServer === 'edge'
-                                ? [
-                                    {
-                                      label: 'Nữ - Hoài My (Edge)',
-                                      value: 'vi-VN-HoaiMyNeural',
-                                    },
-                                    {
-                                      label: 'Nam - Nam Minh (Edge)',
-                                      value: 'vi-VN-NamMinhNeural',
-                                    },
-                                    {
-                                      label: 'Nữ - Phương Mỹ (Edge)',
-                                      value: 'vi-VN-PhuongMyNeural',
-                                    },
-                                    {
-                                      label: 'Nam - Mạnh Khôi (Edge)',
-                                      value: 'vi-VN-ManhKhoiNeural',
-                                    },
-                                  ]
-                                : options.ttsServer === 'fpt'
-                                  ? [
-                                      { label: 'Nữ - Ban Mai (FPT)', value: 'banmai' },
-                                      { label: 'Nam - Lê Minh (FPT)', value: 'leminh' },
-                                      { label: 'Nữ - Thu Minh (FPT)', value: 'thuminh' },
-                                      { label: 'Nữ - Gia Huy (FPT)', value: 'giahuy' },
-                                    ]
-                                  : options.ttsServer === 'google-cloud'
-                                    ? [
-                                        { label: 'Nữ - Neural2-A', value: 'vi-VN-Neural2-A' },
-                                        { label: 'Nam - Neural2-B', value: 'vi-VN-Neural2-B' },
-                                        { label: 'Nữ - Wavenet-A', value: 'vi-VN-Wavenet-A' },
-                                        { label: 'Nam - Wavenet-B', value: 'vi-VN-Wavenet-B' },
-                                      ]
-                                    : [{ label: 'Mặc định', value: 'default' }]
-                            }
-                            className="custom-select"
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {options.translate && (
-                      <div style={{ marginTop: 12, marginBottom: 16 }}>
+                    {options.transcribe && (
+                      <div style={{ marginBottom: 16 }}>
                         <Checkbox
                           checked={options.reviewSrt}
                           onChange={(e) => setOptions({ ...options, reviewSrt: e.target.checked })}
                         >
-                          Kiểm tra & Sửa phụ đề trước khi lồng tiếng
+                          Kiểm tra & Sửa phụ đề trước khi kết xuất
                         </Checkbox>
                       </div>
                     )}
@@ -361,9 +246,11 @@ const VideoRemaker = ({ settings }) => {
                       <div key={item.id} className="history-item">
                         <div className="history-header">
                           <span className="history-time">{item.time}</span>
-                          <span className="history-lang">
-                            Dịch: {item.targetLang.toUpperCase()}
-                          </span>
+                          {item.targetLang && (
+                            <span className="history-lang">
+                              {item.targetLang === 'txt' ? 'Trích xuất' : `Dịch: ${item.targetLang.toUpperCase()}`}
+                            </span>
+                          )}
                         </div>
                         <div className="history-url" title={item.url}>
                           {item.url}
@@ -461,7 +348,7 @@ const VideoRemaker = ({ settings }) => {
         title={
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1rem' }}>
             <History size={20} color="#0d9488" />
-            <span>Kiểm tra & Hiệu chỉnh Phụ đề Lồng tiếng</span>
+            <span>Kiểm tra & Hiệu chỉnh Phụ đề</span>
           </div>
         }
         open={showSrtModal}
@@ -485,8 +372,8 @@ const VideoRemaker = ({ settings }) => {
         destroyOnClose
       >
         <p style={{ color: '#64748b', marginBottom: 12 }}>
-          Dưới đây là phụ đề (định dạng SRT) đã được AI trích xuất và dịch từ video gốc. Bạn có thể
-          chỉnh sửa lại bản dịch hoặc điều chỉnh mốc thời gian để khớp voice hoàn hảo nhất:
+          Dưới đây là phụ đề (định dạng SRT) đã được AI trích xuất từ giọng nói gốc của video. Bạn có thể
+          chỉnh sửa lại câu chữ hoặc điều chỉnh mốc thời gian để chuẩn xác nhất:
         </p>
         <Input.TextArea
           rows={16}

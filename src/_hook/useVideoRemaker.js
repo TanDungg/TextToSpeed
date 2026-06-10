@@ -71,17 +71,13 @@ export const useVideoRemaker = (settings) => {
   const [progress, setProgress] = useState(0);
   const [logs, setLogs] = useState([]);
   const [options, setOptions] = useState({
-    flip: true,
+    flip: false,
     speed: 1.05,
     colorShift: true,
     vignette: true,
-    audioPitch: true,
-    audioDelay: true,
-    translate: true,
-    targetLang: 'vi',
-    ttsServer: 'edge',
-    ttsVoice: 'vi-VN-HoaiMyNeural',
-    ttsSpeed: 1.0,
+    audioPitch: false,
+    audioDelay: false,
+    transcribe: true,
     reviewSrt: false,
     remakeLevel: 'strong',
   });
@@ -145,211 +141,76 @@ export const useVideoRemaker = (settings) => {
       setProgress(40);
       addLog(`Đã tải video: ${inputPath}`, 'success');
 
-      // Step 2: Translate
-      let remakedNoVoicePath = '';
-      let externalAudioList = [];
-      let remakeOptions = { ...options };
+      // Step 2: Transcribe & Extract original audio
+      let srtContent = '';
+      let originalAudioPath = '';
       const hasSubtitles = !!downloadRes.subContent;
 
-      if (options.translate) {
-        setStatus('remaking');
-        addLog('Pass 1: Đang lách bản quyền & đổi tốc độ video gốc...', 'process');
-
-        const isWeb = !window.electron || window.electron.isWebMock;
-        const effectiveOpenAIKey = settings?.openaiKey || (isWeb ? 'SERVER_KEY' : '');
-        const effectiveGeminiKey = settings?.geminiKey || (isWeb ? 'SERVER_KEY' : '');
-        const effectiveGoogleKey = settings?.googleKey || (isWeb ? 'SERVER_KEY' : '');
-        const effectiveFptKey = settings?.fptKey || (isWeb ? 'SERVER_KEY' : '');
-        const effectiveElevenLabsKey = settings?.elevenLabsKey || (isWeb ? 'SERVER_KEY' : '');
-
-        const firstRemakeOptions = {
-          ...options,
-          translate: false, // Chỉ xử lý hình ảnh và tốc độ video ở Pass 1
-        };
-
-        const firstRemakeRes = await VideoRemakerService.videoRemake(inputPath, firstRemakeOptions);
-
-        if (!firstRemakeRes.ok) {
-          throw new Error(firstRemakeRes.error);
-        }
-        remakedNoVoicePath = firstRemakeRes.path;
-        addLog(
-          `Đã hoàn tất Pass 1. Video lách bản quyền: ${getBasename(remakedNoVoicePath)}`,
-          'success'
-        );
-
+      if (options.transcribe) {
         setStatus('translating');
-        let translatedText = '';
+        addLog('Đang tiến hành trích xuất & chuyển giọng nói thành văn bản...', 'process');
+
+        // Extract original audio to .mp3
+        addLog('Đang trích xuất tệp âm thanh gốc...', 'process');
+        const extractRes = await VideoRemakerService.extractAudio(inputPath);
+        if (extractRes.ok) {
+          originalAudioPath = extractRes.path;
+          addLog('Đã trích xuất tệp âm thanh gốc.', 'success');
+        } else {
+          addLog('Không thể trích xuất tệp âm thanh gốc.', 'warning');
+        }
 
         if (hasSubtitles) {
-          addLog('Phát hiện phụ đề gốc từ YouTube! Đang chuyển đổi và dịch thuật...', 'success');
-          const originalSrt = convertVttToSrt(downloadRes.subContent);
+          addLog('Phát hiện phụ đề gốc từ video! Đang chuyển đổi...', 'success');
+          srtContent = convertVttToSrt(downloadRes.subContent);
+        } else if (originalAudioPath) {
+          const isWeb = !window.electron || window.electron.isWebMock;
+          const effectiveOpenAIKey = settings?.openaiKey || (isWeb ? 'SERVER_KEY' : '');
+          const effectiveGeminiKey = settings?.geminiKey || (isWeb ? 'SERVER_KEY' : '');
 
           try {
             if (effectiveOpenAIKey) {
               const isGroq = effectiveOpenAIKey.startsWith('gsk_');
-              const providerName = isGroq ? 'Groq' : (effectiveOpenAIKey === 'SERVER_KEY' ? 'Server OpenAI' : 'OpenAI');
-              addLog(`Đang dịch phụ đề bằng AI của ${providerName}...`, 'process');
-
-              const prompt = `Translate the following SRT subtitles to ${options.targetLang}. Keep the exact same SRT format, timestamps, and structure. Do NOT add any extra text outside the SRT block:\n\n${originalSrt}`;
-
-              let translateUrl = 'https://api.openai.com/v1/chat/completions';
-              let translateModel = 'gpt-4o-mini';
-              if (isGroq) {
-                translateUrl = 'https://api.groq.com/openai/v1/chat/completions';
-                translateModel = 'llama-3.3-70b-versatile';
-              }
-
-              const transRes = await VideoRemakerService.ttsRequest(translateUrl, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  Authorization: `Bearer ${effectiveOpenAIKey}`,
-                },
-                body: {
-                  model: translateModel,
-                  messages: [{ role: 'user', content: prompt }],
-                },
-              });
-
-              if (transRes.ok && transRes.data?.choices?.[0]?.message?.content) {
-                translatedText = transRes.data.choices[0].message.content
-                  .replace(/```srt/gi, '')
-                  .replace(/```/g, '')
-                  .trim();
-              } else {
-                translatedText = originalSrt;
-              }
-            } else if (effectiveGeminiKey) {
-              addLog('Đang dịch phụ đề bằng Google Gemini 1.5 Flash (Free)...', 'process');
-
-              const prompt = `Translate the following SRT subtitles to ${
-                options.targetLang === 'vi'
-                  ? 'Tiếng Việt'
-                  : options.targetLang === 'en'
-                    ? 'Tiếng Anh'
-                    : 'Tiếng Trung'
-              }. Keep the exact same SRT format, timestamps, and structure. Do NOT add any extra text, and do not wrap in markdown code blocks. Here is the SRT content:\n\n${originalSrt}`;
-
-              const geminiUrl = effectiveGeminiKey === 'SERVER_KEY'
-                ? 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=SERVER_KEY'
-                : `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${effectiveGeminiKey}`;
-
-              const response = await VideoRemakerService.ttsRequest(geminiUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: {
-                  contents: [{ parts: [{ text: prompt }] }],
-                },
-              });
-
-              if (response.ok && response.data?.candidates?.[0]?.content?.parts?.[0]?.text) {
-                translatedText = response.data.candidates[0].content.parts[0].text
-                  .replace(/```srt/gi, '')
-                  .replace(/```/g, '')
-                  .trim();
-              } else {
-                translatedText = originalSrt;
-              }
-            } else {
-              throw new Error(
-                'Tính năng dịch phụ đề bắt buộc phải có OpenAI/Groq Key hoặc Gemini API Key trong phần Cài đặt.'
-              );
-            }
-            addLog('Đã dịch thuật phụ đề thành công!', 'success');
-          } catch (err) {
-            addLog(`Lỗi dịch phụ đề: ${err.message}. Sử dụng phụ đề gốc.`, 'warning');
-            translatedText = originalSrt;
-          }
-        } else {
-          // Trích xuất âm thanh từ video gốc
-          addLog('Đang trích xuất âm thanh từ video gốc...', 'process');
-          const extractRes = await VideoRemakerService.extractAudio(inputPath);
-          if (!extractRes.ok) throw new Error('Không thể trích xuất âm thanh từ video gốc.');
-
-          try {
-            if (effectiveOpenAIKey) {
-              const isGroq = effectiveOpenAIKey.startsWith('gsk_');
-              const providerName = isGroq ? 'Groq' : (effectiveOpenAIKey === 'SERVER_KEY' ? 'Server OpenAI' : 'OpenAI');
+              const providerName = isGroq
+                ? 'Groq'
+                : effectiveOpenAIKey === 'SERVER_KEY'
+                  ? 'Server OpenAI'
+                  : 'OpenAI';
 
               addLog(
-                `Đang nhận diện giọng nói bằng AI Whisper của ${providerName} (SRT Format)...`,
+                `Đang nhận diện giọng nói bằng AI Whisper của ${providerName} (SRT)...`,
                 'process'
               );
               const sttRes = await VideoRemakerService.transcribeAudio(
-                extractRes.path,
+                originalAudioPath,
                 effectiveOpenAIKey
               );
 
               if (sttRes.ok) {
-                const transcribedText = sttRes.text;
-                addLog(
-                  `Đã nhận diện thành công SRT. Đang dịch thuật bằng ${providerName}...`,
-                  'success'
-                );
-
-                const prompt = `Translate the following SRT subtitles to ${options.targetLang}. Keep the exact same SRT format, timestamps, and structure. Do NOT add any extra text outside the SRT block:\n\n${transcribedText}`;
-
-                let translateUrl = 'https://api.openai.com/v1/chat/completions';
-                let translateModel = 'gpt-4o-mini';
-
-                if (isGroq) {
-                  translateUrl = 'https://api.groq.com/openai/v1/chat/completions';
-                  translateModel = 'llama-3.3-70b-versatile';
-                }
-
-                const transRes = await VideoRemakerService.ttsRequest(translateUrl, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${effectiveOpenAIKey}`,
-                  },
-                  body: {
-                    model: translateModel,
-                    messages: [{ role: 'user', content: prompt }],
-                  },
-                });
-
-                if (transRes.ok && transRes.data?.choices?.[0]?.message?.content) {
-                  translatedText = transRes.data.choices[0].message.content
-                    .replace(/```srt/gi, '')
-                    .replace(/```/g, '')
-                    .trim();
-                } else {
-                  addLog(
-                    `Lỗi dịch bằng ${providerName}, sử dụng văn bản gốc nhận diện từ Whisper.`,
-                    'warning'
-                  );
-                  translatedText = transcribedText;
-                }
+                srtContent = sttRes.text;
+                addLog('Nhận diện phụ đề thành công!', 'success');
               } else {
                 throw new Error(sttRes.error);
               }
             } else if (effectiveGeminiKey) {
               addLog(
-                'Đang sử dụng Google Gemini 1.5 Flash để trích xuất & dịch phụ đề trực tiếp từ âm thanh (Free)...',
+                'Đang sử dụng Google Gemini 1.5 Flash để trích xuất phụ đề (Free)...',
                 'process'
               );
 
-              const base64Res = await VideoRemakerService.readFileBase64(extractRes.path);
+              const base64Res = await VideoRemakerService.readFileBase64(originalAudioPath);
               if (!base64Res.ok) {
-                throw new Error(`Không thể đọc file âm thanh: ${base64Res.error}`);
+                throw new Error(`Không thể đọc tệp âm thanh: ${base64Res.error}`);
               }
 
               const base64Audio = base64Res.data;
-              const prompt = `Bạn là một chuyên gia phụ đề và lồng tiếng phim chuyên nghiệp. Hãy nghe cực kỳ kỹ lưỡng tệp âm thanh đính kèm này và tạo phụ đề dịch sang ${
-                options.targetLang === 'vi'
-                  ? 'Tiếng Việt'
-                  : options.targetLang === 'en'
-                    ? 'Tiếng Anh'
-                    : 'Tiếng Trung'
-              } theo định dạng SRT chuẩn 100%.
-...
+              const prompt = `Bạn là một chuyên gia phụ đề chuyên nghiệp. Hãy nghe cực kỳ kỹ lưỡng tệp âm thanh đính kèm này và tạo phụ đề theo định dạng SRT chuẩn 100% bằng ngôn ngữ gốc của âm thanh.
 CHỈ trả về duy nhất chuỗi nội dung SRT thuần túy. Tuyệt đối không giải thích gì thêm, không bọc trong thẻ code markdown \`\`\`srt hay bất kỳ ký tự nào khác ngoài định dạng SRT.`;
 
-              const geminiUrl = effectiveGeminiKey === 'SERVER_KEY'
-                ? 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=SERVER_KEY'
-                : `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${effectiveGeminiKey}`;
+              const geminiUrl =
+                effectiveGeminiKey === 'SERVER_KEY'
+                  ? 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=SERVER_KEY'
+                  : `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${effectiveGeminiKey}`;
 
               const response = await VideoRemakerService.ttsRequest(geminiUrl, {
                 method: 'POST',
@@ -386,26 +247,26 @@ CHỈ trả về duy nhất chuỗi nội dung SRT thuần túy. Tuyệt đối 
                 throw new Error('Gemini không phản hồi văn bản phụ đề.');
               }
 
-              translatedText = textResult
+              srtContent = textResult
                 .replace(/```srt/gi, '')
                 .replace(/```/g, '')
                 .trim();
 
-              addLog(`Đã dịch & trích xuất phụ đề thành công bằng Gemini 1.5 Flash!`, 'success');
+              addLog('Đã trích xuất phụ đề thành công bằng Gemini 1.5 Flash!', 'success');
             } else {
               throw new Error(
-                'Tính năng lồng tiếng theo nhịp (SRT) bắt buộc phải có OpenAI/Groq Key hoặc Gemini API Key trong phần Cài đặt.'
+                'Tính năng nhận diện giọng nói bắt buộc phải có OpenAI/Groq Key hoặc Gemini API Key trong phần Cài đặt.'
               );
             }
           } catch (err) {
-            addLog(`Lỗi trích xuất/dịch: ${err.message}`, 'error');
+            addLog(`Lỗi trích xuất/nhận diện: ${err.message}`, 'error');
             throw err;
           }
         }
 
-        if (options.reviewSrt) {
+        if (options.reviewSrt && srtContent) {
           addLog('Đang chờ người dùng kiểm tra và chỉnh sửa phụ đề...', 'process');
-          setSrtText(translatedText);
+          setSrtText(srtContent);
           setShowSrtModal(true);
           setLoading(false);
           const editedSrt = await new Promise((resolve, reject) => {
@@ -416,96 +277,22 @@ CHỈ trả về duy nhất chuỗi nội dung SRT thuần túy. Tuyệt đối 
           if (!editedSrt) {
             throw new Error('Đã hủy tiến trình bởi người dùng.');
           }
-          translatedText = editedSrt;
+          srtContent = editedSrt;
           addLog('Đã xác nhận phụ đề! Tiếp tục tiến trình remake...', 'success');
         }
-
-        const srtBlocks = parseSRT(translatedText);
-        externalAudioList = [];
-
-        try {
-          addLog(
-            `Đang tạo giọng lồng tiếng (${srtBlocks.length} câu) bằng ${options.ttsServer.toUpperCase()}...`,
-            'process'
-          );
-
-          for (let i = 0; i < srtBlocks.length; i++) {
-            const block = srtBlocks[i];
-            if (!block.text.trim()) continue;
-
-            let audioBlob;
-            if (options.ttsServer === 'edge') {
-              audioBlob = await TTSProvider.speakWithEdge(
-                block.text,
-                options.ttsVoice,
-                1.0
-              );
-            } else if (options.ttsServer === 'google-cloud') {
-              audioBlob = await TTSProvider.speakWithGoogleCloud(
-                block.text,
-                options.ttsVoice,
-                effectiveGoogleKey,
-                0,
-                1.0
-              );
-            } else if (options.ttsServer === 'fpt') {
-              audioBlob = await TTSProvider.speakWithFPT(
-                block.text,
-                options.ttsVoice,
-                effectiveFptKey,
-                0
-              );
-            } else if (options.ttsServer === 'elevenlabs') {
-              audioBlob = await TTSProvider.speakWithElevenLabs(
-                block.text,
-                options.ttsVoice,
-                effectiveElevenLabsKey
-              );
-            } else {
-              audioBlob = await TTSProvider.getGoogleAudioBlob(block.text, options.targetLang);
-            }
-
-            const audioPath = await VideoRemakerService.saveTempAudio(audioBlob);
-
-            const finalStartMs = Math.round(block.startMs / (options.speed || 1.0));
-            externalAudioList.push({ path: audioPath, startMs: finalStartMs });
-
-            if (i % 3 === 0) setProgress(50 + Math.floor((i / srtBlocks.length) * 20));
-          }
-
-          remakeOptions.externalAudioList = externalAudioList;
-          addLog('Đã tạo xong toàn bộ giọng lồng tiếng AI theo nhịp.', 'success');
-        } catch (ttsErr) {
-          addLog('Lỗi tạo giọng đọc: ' + ttsErr.message, 'error');
-        }
-
-        setProgress(75);
       }
 
       // Step 3: Remake
-      let remakeRes;
-      if (options.translate) {
-        setProgress(85);
-        setStatus('remaking');
-        addLog('Pass 2: Đang trộn giọng đọc lồng tiếng AI vào video đã remake...', 'process');
+      setStatus('remaking');
+      addLog('Đang tiến hành lách bản quyền & kết xuất video...', 'process');
 
-        const finalRemakeOptions = {
-          ...options,
-          flip: false,
-          colorShift: false,
-          vignette: false,
-          audioPitch: false,
-          audioDelay: false,
-          speed: 1.0, // Đặt là 1.0 vì video đã được lách & tăng tốc ở Pass 1 rồi
-          externalAudioList: externalAudioList,
-        };
+      const remakeOptions = {
+        ...options,
+        srtContent: srtContent,
+        originalAudioPath: originalAudioPath,
+      };
 
-        remakeRes = await VideoRemakerService.videoRemake(remakedNoVoicePath, finalRemakeOptions);
-      } else {
-        setStatus('remaking');
-        addLog('Đang tiến hành lách bản quyền & kết xuất video...', 'process');
-        remakeRes = await VideoRemakerService.videoRemake(inputPath, remakeOptions);
-      }
+      const remakeRes = await VideoRemakerService.videoRemake(inputPath, remakeOptions);
 
       if (!remakeRes.ok) {
         throw new Error(remakeRes.error);
@@ -521,7 +308,7 @@ CHỈ trả về duy nhất chuỗi nội dung SRT thuần túy. Tuyệt đối 
         id: Date.now(),
         url: url,
         outputPath: remakeRes.path,
-        targetLang: options.targetLang,
+        targetLang: options.transcribe ? 'txt' : '',
         time: new Date().toLocaleString('vi-VN', {
           hour: '2-digit',
           minute: '2-digit',
