@@ -89,13 +89,32 @@ const SettingsModal = ({ open, onCancel, settings, onSave }) => {
             background: 'rgba(59, 130, 246, 0.05)',
             padding: '12px 20px',
             borderRadius: '1rem',
-            marginBottom: '24px',
+            marginBottom: '16px',
           }}
         >
           <Text strong style={{ color: '#1e40af' }}>
             Kích hoạt chế độ AI cao cấp
           </Text>
           <Form.Item name="useAI" valuePropName="checked" noStyle>
+            <Switch />
+          </Form.Item>
+        </div>
+
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            background: 'rgba(13, 148, 136, 0.05)',
+            padding: '12px 20px',
+            borderRadius: '1rem',
+            marginBottom: '24px',
+          }}
+        >
+          <Text strong style={{ color: '#0f766e' }}>
+            Sử dụng Cloud Engine (C# API)
+          </Text>
+          <Form.Item name="useCloudEngine" valuePropName="checked" noStyle>
             <Switch />
           </Form.Item>
         </div>

@@ -29,7 +29,7 @@ import {
 if (typeof window !== 'undefined') {
   const originalFetch = window.fetch;
   window.fetch = async (url, options = {}) => {
-    if (typeof url === 'string' && url.startsWith('/api/')) {
+    if (typeof url === 'string' && (url.startsWith('/api/') || url.startsWith(BASE_URL_API))) {
       const token = localStorage.getItem('token') || localStorage.getItem('access_token');
       if (token) {
         options.headers = options.headers || {};
@@ -72,9 +72,16 @@ const App = () => {
   } = useAuth();
   const [settings, setSettings] = useState(() => {
     const saved = localStorage.getItem('tts_settings');
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed.useCloudEngine === undefined) {
+        parsed.useCloudEngine = true;
+      }
+      return parsed;
+    }
     return {
       useAI: true,
+      useCloudEngine: true,
       openaiKey: import.meta.env.VITE_OPENAI_API_KEY || '',
       fptKey: '',
       googleKey: '',

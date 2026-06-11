@@ -32,6 +32,7 @@ import VideoRemakerService from '../../_service/videoRemaker.service';
 const { Title, Text } = Typography;
 
 const VideoRemaker = ({ settings }) => {
+  const isElectron = window.electron && !window.electron.isWebMock;
   const {
     url,
     setUrl,
@@ -134,6 +135,31 @@ const VideoRemaker = ({ settings }) => {
                 <Col span={24}>
                   <div className="section-label">
                     <Settings2 size={18} />
+                    <span>Xử lý Nhạc nền (BGM)</span>
+                  </div>
+                  <div style={{ marginBottom: 8 }}>
+                    <p
+                      style={{ marginBottom: 6, fontSize: 13, color: '#475569', fontWeight: 600 }}
+                    >
+                      Chế độ nhạc nền:
+                    </p>
+                    <Select
+                      size="large"
+                      value={options.bgmMode || 'demucs'}
+                      style={{ width: '100%' }}
+                      onChange={(val) => setOptions({ ...options, bgmMode: val })}
+                      options={[
+                        { value: 'none', label: 'Bỏ nhạc nền (Chỉ giữ giọng thuyết minh mới)' },
+                        { value: 'duck', label: 'Giảm volume nhạc nền gốc (-12dB)' },
+                        { value: 'demucs', label: 'Tách nhạc nền sạch bằng AI Demucs (Khuyên dùng)' },
+                      ]}
+                      className="custom-select"
+                    />
+                  </div>
+                </Col>
+                <Col span={24}>
+                  <div className="section-label">
+                    <Settings2 size={18} />
                     <span>Trích xuất & Tốc độ video</span>
                   </div>
                   <div className="translate-settings">
@@ -168,6 +194,33 @@ const VideoRemaker = ({ settings }) => {
                       ]}
                       className="custom-select"
                     />
+                  </div>
+                </Col>
+                
+                <Col span={24}>
+                  <div className="section-label">
+                    <Settings2 size={18} />
+                    <span>Cấu hình tự động đăng tải (Auto Publish)</span>
+                  </div>
+                  <div className="publish-settings" style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px dashed #cbd5e1' }}>
+                    <Checkbox
+                      checked={options.publishYoutube}
+                      onChange={(e) => setOptions({ ...options, publishYoutube: e.target.checked })}
+                    >
+                      Đăng lên YouTube (OAuth2 Client Secrets)
+                    </Checkbox>
+                    <Checkbox
+                      checked={options.publishFacebook}
+                      onChange={(e) => setOptions({ ...options, publishFacebook: e.target.checked })}
+                    >
+                      Đăng lên Facebook (Fanpage Token)
+                    </Checkbox>
+                    <Checkbox
+                      checked={options.publishTiktok}
+                      onChange={(e) => setOptions({ ...options, publishTiktok: e.target.checked })}
+                    >
+                      Đăng lên TikTok (OAuth Access Token)
+                    </Checkbox>
                   </div>
                 </Col>
               </Row>
@@ -275,7 +328,7 @@ const VideoRemaker = ({ settings }) => {
                             size="small"
                             icon={<FolderOpen size={12} />}
                             onClick={() => {
-                              window.electron.showItemInFolder(item.outputPath);
+                              VideoRemakerService.showItemInFolder(item.outputPath);
                             }}
                           >
                             Mở thư mục
@@ -304,7 +357,7 @@ const VideoRemaker = ({ settings }) => {
                 </div>
               </Card>
 
-              {(!envStatus.ffmpeg || !envStatus.ytdlp) && (
+              {isElectron && !settings?.useCloudEngine && (!envStatus.ffmpeg || !envStatus.ytdlp || !envStatus.demucs) && (
                 <Card
                   className="warning-card-inner"
                   style={{ marginTop: 24, border: '1px solid #fee2e2', background: '#fef2f2' }}
@@ -333,8 +386,13 @@ const VideoRemaker = ({ settings }) => {
                         </a>
                       </p>
                     )}
+                    {!envStatus.demucs && (
+                      <p>
+                        • <b>Demucs</b>: Cần thiết để tách nhạc nền bằng AI. Hãy cài đặt Python và chạy lệnh <code>pip install demucs</code> trong Command Prompt.
+                      </p>
+                    )}
                     <p style={{ marginTop: 8, fontWeight: 500 }}>
-                      Sau khi cài đặt, hãy thêm vào <b>PATH</b> hệ thống và khởi động lại ứng dụng.
+                      Sau khi cài đặt, hãy thêm các công cụ vào <b>PATH</b> hệ thống và khởi động lại ứng dụng.
                     </p>
                   </div>
                 </Card>

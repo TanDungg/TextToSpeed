@@ -29,11 +29,26 @@ contextBridge.exposeInMainWorld('electron', {
   extractAudio: (videoPath) => {
     return ipcRenderer.invoke('extract-audio', { videoPath });
   },
+  separateBgm: (audioPath, bgmMode) => {
+    return ipcRenderer.invoke('separate-bgm', { audioPath, bgmMode });
+  },
+  translateSegments: (segments, geminiKey, groqKey) => {
+    return ipcRenderer.invoke('translate-segments', { segments, geminiKey, groqKey });
+  },
+  saveMetadata: (videoPath, metadata, thumbnailPrompt) => {
+    return ipcRenderer.invoke('save-metadata', { videoPath, metadata, thumbnailPrompt });
+  },
+  publishVideo: (videoPath, metadata, platforms) => {
+    return ipcRenderer.invoke('publish-video', { videoPath, metadata, platforms });
+  },
   transcribeAudio: (audioPath, apiKey) => {
     return ipcRenderer.invoke('transcribe-audio', { audioPath, apiKey });
   },
   readFileBase64: (filePath) => {
     return ipcRenderer.invoke('read-file-base64', { filePath });
+  },
+  compressAudio: (inputPath) => {
+    return ipcRenderer.invoke('compress-audio', { inputPath });
   },
   listGeminiModels: (apiKey) => {
     return ipcRenderer.invoke('list-gemini-models', { apiKey });
