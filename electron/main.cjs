@@ -428,11 +428,22 @@ async function handleVideoRemake(event, { inputPath, options }) {
   }
 
   const isStrong = options.remakeLevel === 'strong';
+  const isSuperStrong = options.remakeLevel === 'super_strong';
   let filters = [];
   if (options.flip) filters.push('hflip');
-
   if (options.colorShift) {
-    if (isStrong) {
+    if (isSuperStrong) {
+      // LÁCH SIÊU CẤP: Zoom sâu 18% để cắt rìa quảng cáo, ánh sáng động sin(t) co dãn nhẹ tránh hash tĩnh, lưới bảo vệ mờ, vẽ banner che bảng điểm & logo
+      filters.push(
+        'crop=in_w*0.82:in_h*0.82,scale=in_w:in_h',
+        'hue=h="sin(2*t)*3":s="1.15+0.05*cos(2*t)"',
+        "eq=contrast='1.08+0.03*sin(t)':brightness='0.01*cos(t)':saturation='1.15+0.05*sin(t/2)'",
+        'drawgrid=w=100:h=100:t=1:c=white@0.03',
+        'drawbox=x=24:y=24:w=220:h=70:color=black@0.8:t=fill',
+        'drawbox=x=in_w-244:y=24:w=220:h=70:color=black@0.8:t=fill',
+        'noise=alls=6:allf=t'
+      );
+    } else if (isStrong) {
       // LÁCH MẠNH (YouTube Content ID): Zoom nhẹ 4% (crop & scale) để phá tọa độ điểm ảnh, thay đổi hệ màu rõ hơn, thêm hạt nhiễu (noise grain) nhẹ
       filters.push(
         'crop=in_w*0.96:in_h*0.96,scale=in_w:in_h',
@@ -447,13 +458,17 @@ async function handleVideoRemake(event, { inputPath, options }) {
   }
 
   if (options.vignette) {
-    if (isStrong) {
+    if (isSuperStrong) {
+      filters.push('vignette=PI/5');
+    } else if (isStrong) {
       // Góc tối rõ nét hơn
       filters.push('vignette=PI/6');
     } else {
       filters.push('vignette=PI/8');
     }
   }
+
+
 
   const speed = options.speed || 1.05;
 
@@ -466,13 +481,23 @@ async function handleVideoRemake(event, { inputPath, options }) {
   // 1. Xử lý luồng Video (nếu có)
   if (hasVideo) {
     let vFilters = filters.length > 0 ? filters : [];
-    let vFilterStr = vFilters.length > 0 ? vFilters.join(',') : 'copy';
-    if (vFilterStr !== 'copy') {
-      vFilterStr = `[0:v]${vFilterStr},setpts=PTS/${speed}[v]`;
-    } else {
-      vFilterStr = `[0:v]setpts=PTS/${speed}[v]`;
+    let baseFilterStr = vFilters.length > 0 ? vFilters.join(',') : '';
+    
+    let videoPipe = '[0:v]';
+    if (baseFilterStr) {
+      videoPipe += `${baseFilterStr}[core_v];[core_v]`;
     }
-    filterComplexParts.push(vFilterStr);
+
+    if (options.blurBorder) {
+      // Tách luồng core thành 2 luồng: v1 để thu nhỏ, v2 làm mờ nền.
+      // Nếu lách siêu cấp, video chính sẽ trôi nổi liên tục theo quỹ đạo tròn overlay='(W-w)/2+sin(t)*12':'(H-h)/2+cos(t)*12'
+      const overlayCoords = `overlay=(W-w)/2:(H-h)/2`;
+      videoPipe += `split[v1][v2];[v1]scale=iw*0.85:ih*0.85[inner];[v2]boxblur=20[blurred];[blurred][inner]${overlayCoords},setpts=PTS/${speed}[v]`;
+    } else {
+      videoPipe += `setpts=PTS/${speed}[v]`;
+    }
+
+    filterComplexParts.push(videoPipe);
     mapArgs.push('-map "[v]"');
   }
 
@@ -548,11 +573,13 @@ async function handleVideoRemake(event, { inputPath, options }) {
       let aFilters = [];
       aFilters.push(`atempo=${speed}`);
       if (options.audioPitch) {
-        if (isStrong) aFilters.push('asetrate=44100*1.04', 'atempo=1/1.04', 'bass=g=3', 'treble=g=1.5');
+        if (isSuperStrong) aFilters.push('asetrate=44100*1.06', 'atempo=1/1.06', 'bass=g=4', 'treble=g=2');
+        else if (isStrong) aFilters.push('asetrate=44100*1.04', 'atempo=1/1.04', 'bass=g=3', 'treble=g=1.5');
         else aFilters.push('asetrate=44100*1.02', 'atempo=1/1.02');
       }
       if (options.audioDelay) {
-        if (isStrong) aFilters.push('adelay=100|100', 'aecho=0.8:0.85:25:0.25');
+        if (isSuperStrong) aFilters.push('adelay=150|150', 'aecho=0.8:0.82:30:0.3');
+        else if (isStrong) aFilters.push('adelay=100|100', 'aecho=0.8:0.85:25:0.25');
         else aFilters.push('adelay=50|50', 'aecho=0.8:0.88:6:0.2');
       }
       const aFilterStr = aFilters.join(',');
@@ -581,14 +608,18 @@ async function handleVideoRemake(event, { inputPath, options }) {
     let aFilters = [];
     aFilters.push(`atempo=${speed}`);
     if (options.audioPitch) {
-      if (isStrong) {
+      if (isSuperStrong) {
+        aFilters.push('asetrate=44100*1.06', 'atempo=1/1.06', 'bass=g=4', 'treble=g=2');
+      } else if (isStrong) {
         aFilters.push('asetrate=44100*1.04', 'atempo=1/1.04', 'bass=g=3', 'treble=g=1.5');
       } else {
         aFilters.push('asetrate=44100*1.02', 'atempo=1/1.02');
       }
     }
     if (options.audioDelay) {
-      if (isStrong) {
+      if (isSuperStrong) {
+        aFilters.push('adelay=150|150', 'aecho=0.8:0.82:30:0.3');
+      } else if (isStrong) {
         aFilters.push('adelay=100|100', 'aecho=0.8:0.85:25:0.25');
       } else {
         aFilters.push('adelay=50|50', 'aecho=0.8:0.88:6:0.2');
@@ -801,10 +832,7 @@ ${JSON.stringify(segments, null, 2)}`;
     const modelsToTry = [
       { name: 'gemini-2.5-flash', version: 'v1beta' },
       { name: 'gemini-2.0-flash', version: 'v1beta' },
-      { name: 'gemini-1.5-flash', version: 'v1' },
-      { name: 'gemini-1.5-flash', version: 'v1beta' },
-      { name: 'gemini-1.5-flash-8b', version: 'v1' },
-      { name: 'gemini-1.5-flash-8b', version: 'v1beta' },
+      { name: 'gemini-3.5-flash', version: 'v1beta' },
     ];
     let lastError = null;
     for (const modelCfg of modelsToTry) {
@@ -1714,29 +1742,68 @@ ipcMain.handle('select-directory', async () => {
   return result.filePaths[0];
 });
 
+async function retryRequest(fn, retries = 3, delayMs = 1500) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const errMsg = err.response?.data?.error?.message || err.message || '';
+      const status = err.response?.status;
+      const isTransient =
+        status === 429 ||
+        status === 503 ||
+        status === 504 ||
+        errMsg.toLowerCase().includes('high demand') ||
+        errMsg.toLowerCase().includes('overloaded') ||
+        errMsg.toLowerCase().includes('resource_exhausted') ||
+        errMsg.toLowerCase().includes('temporary') ||
+        errMsg.toLowerCase().includes('rate limit');
+
+      if (isTransient && i < retries - 1) {
+        console.warn(`[Gemini Retry] Gặp lỗi tạm thời: "${errMsg}". Đang thử lại sau ${delayMs}ms (Lần ${i + 1}/${retries})...`);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        delayMs *= 2; // exponential backoff
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
 ipcMain.handle(
   'gpt-generate-blend-prompt',
-  async (event, { productImageBase64, modelImageBase64, apiKey, provider, geminiModel }) => {
+  async (event, { productImageBase64, modelImageBase64, poseImageBase64, bgImageBase64, customImagePrompt, apiKey, provider, geminiModel }) => {
     const axios = require('axios');
     try {
       // Rút trích base64 sạch (loại bỏ data:image/...;base64,)
       const cleanProduct = productImageBase64.replace(/^data:image\/\w+;base64,/, '');
       const cleanModel = modelImageBase64.replace(/^data:image\/\w+;base64,/, '');
+      const cleanPose = poseImageBase64 ? poseImageBase64.replace(/^data:image\/\w+;base64,/, '') : '';
+      const cleanBg = bgImageBase64 ? bgImageBase64.replace(/^data:image\/\w+;base64,/, '') : '';
 
-      const systemPrompt = `You are an expert AI prompt engineer.
-Analyze the product in the product image and the style, clothing, lighting, pose, and background in the model/scene image.
-Create a highly detailed English prompt to blend this product onto the model or scene realistically.
-Specify the exact product placement, lighting angles, shadows, camera lenses, and scenic styling matching the model image.
+      const systemPrompt = `You are an expert AI prompt engineer for fashion image generation.
+Analyze the following input images:
+1. Product Image: A fashion garment / clothing item.
+2. Character Model Image: A reference of the person's face, skin tone, hair, and facial features.
+3. Pose/Layout Image: A reference showing the body stance, pose, camera perspective, and default background.
+${cleanBg ? '4. Background Image: An alternative background context for the scene.' : ''}
+
+Create a highly detailed English prompt to generate a realistic final photo where:
+- The character model (Image 2) is wearing the fashion clothing (Image 1).
+- The character adopts the exact body pose, stance, hand placement, and perspective from the Pose/Layout Image (Image 3).
+- The final model is placed realistically into the background scene (${cleanBg ? 'from the Background Image (Image 4)' : 'from the Pose/Layout Image (Image 3)'}), matching the lighting direction, shadow drop, camera angle, and scene styling.
+${customImagePrompt ? `- Incorporate the following user instructions: ${customImagePrompt}` : ''}
 Return ONLY the final English prompt string. DO NOT include markdown, formatting, or introduction.`;
 
       if (provider === 'gemini') {
         const modelsToTry = [
-          geminiModel,
+          geminiModel || 'gemini-2.5-flash',
           'gemini-2.5-flash',
           'gemini-2.0-flash',
           'gemini-3.5-flash',
-          'gemini-1.5-flash',
-        ].filter((m, index, self) => m && self.indexOf(m) === index);
+        ]
+          .filter((m) => m && !m.startsWith('gemini-1.'))
+          .filter((m, index, self) => self.indexOf(m) === index);
 
         let response;
         let lastError = null;
@@ -1745,50 +1812,25 @@ Return ONLY the final English prompt string. DO NOT include markdown, formatting
         for (const model of modelsToTry) {
           try {
             const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`;
-            response = await axios.post(
-              url,
-              {
-                contents: [
-                  {
-                    parts: [
-                      { text: systemPrompt },
-                      { inlineData: { mimeType: 'image/jpeg', data: cleanProduct } },
-                      { inlineData: { mimeType: 'image/jpeg', data: cleanModel } },
-                    ],
-                  },
-                ],
-              },
-              {
-                headers: { 'Content-Type': 'application/json' },
-              }
-            );
-            successfulModel = model;
-            break;
-          } catch (v1Error) {
-            const is404 =
-              v1Error.response?.status === 404 ||
-              v1Error.response?.data?.error?.message?.includes('not found') ||
-              v1Error.message?.includes('404');
-            if (!is404) {
-              throw v1Error;
+            const parts = [
+              { text: systemPrompt },
+              { inlineData: { mimeType: 'image/jpeg', data: cleanProduct } },
+              { inlineData: { mimeType: 'image/jpeg', data: cleanModel } }
+            ];
+            if (cleanPose) {
+              parts.push({ inlineData: { mimeType: 'image/jpeg', data: cleanPose } });
             }
-            console.warn(
-              `Thử Gemini v1 thất bại cho model ${model} (404), chuyển sang v1beta hoặc model khác...`
-            );
-            lastError = v1Error;
+            if (cleanBg) {
+              parts.push({ inlineData: { mimeType: 'image/jpeg', data: cleanBg } });
+            }
 
-            try {
-              const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-              response = await axios.post(
+            response = await retryRequest(async () => {
+              return await axios.post(
                 url,
                 {
                   contents: [
                     {
-                      parts: [
-                        { text: systemPrompt },
-                        { inlineData: { mimeType: 'image/jpeg', data: cleanProduct } },
-                        { inlineData: { mimeType: 'image/jpeg', data: cleanModel } },
-                      ],
+                      parts: parts,
                     },
                   ],
                 },
@@ -1796,11 +1838,58 @@ Return ONLY the final English prompt string. DO NOT include markdown, formatting
                   headers: { 'Content-Type': 'application/json' },
                 }
               );
+            });
+            successfulModel = model;
+            break;
+          } catch (v1Error) {
+            const status = v1Error.response?.status;
+            const isFatal = status === 400 || status === 403;
+            if (isFatal) {
+              throw v1Error;
+            }
+            console.warn(
+              `Thử Gemini v1 thất bại cho model ${model} (Status: ${status || 'unknown'}), chuyển sang v1beta hoặc thử model khác...`
+            );
+            lastError = v1Error;
+
+            try {
+              const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+              const parts = [
+                { text: systemPrompt },
+                { inlineData: { mimeType: 'image/jpeg', data: cleanProduct } },
+                { inlineData: { mimeType: 'image/jpeg', data: cleanModel } }
+              ];
+              if (cleanPose) {
+                parts.push({ inlineData: { mimeType: 'image/jpeg', data: cleanPose } });
+              }
+              if (cleanBg) {
+                parts.push({ inlineData: { mimeType: 'image/jpeg', data: cleanBg } });
+              }
+
+              response = await retryRequest(async () => {
+                return await axios.post(
+                  url,
+                  {
+                    contents: [
+                      {
+                        parts: parts,
+                      },
+                    ],
+                  },
+                  {
+                    headers: { 'Content-Type': 'application/json' },
+                  }
+                );
+              });
               successfulModel = model;
               break;
             } catch (v1betaError) {
+              const betaStatus = v1betaError.response?.status;
+              if (betaStatus === 400 || betaStatus === 403) {
+                throw v1betaError;
+              }
               console.warn(
-                `Thử Gemini v1beta thất bại cho model ${model}. Sẽ thử model tiếp theo...`
+                `Thử Gemini v1beta thất bại cho model ${model} (Status: ${betaStatus || 'unknown'}). Sẽ thử model tiếp theo...`
               );
               lastError = v1betaError;
             }
@@ -1818,6 +1907,30 @@ Return ONLY the final English prompt string. DO NOT include markdown, formatting
       } else {
         // Mặc định dùng OpenAI GPT-4o
         const url = 'https://api.openai.com/v1/chat/completions';
+        const messagesContent = [
+          { type: 'text', text: systemPrompt },
+          {
+            type: 'image_url',
+            image_url: { url: `data:image/jpeg;base64,${cleanProduct}` },
+          },
+          {
+            type: 'image_url',
+            image_url: { url: `data:image/jpeg;base64,${cleanModel}` },
+          }
+        ];
+        if (cleanPose) {
+          messagesContent.push({
+            type: 'image_url',
+            image_url: { url: `data:image/jpeg;base64,${cleanPose}` },
+          });
+        }
+        if (cleanBg) {
+          messagesContent.push({
+            type: 'image_url',
+            image_url: { url: `data:image/jpeg;base64,${cleanBg}` },
+          });
+        }
+
         const response = await axios.post(
           url,
           {
@@ -1905,8 +2018,10 @@ ipcMain.handle(
                   personGeneration: 'ALLOW_ADULT',
                 },
               };
-              response = await axios.post(url, payload, {
-                headers: { 'Content-Type': 'application/json' },
+              response = await retryRequest(async () => {
+                return await axios.post(url, payload, {
+                  headers: { 'Content-Type': 'application/json' },
+                });
               });
 
               const imageBytes = response.data?.predictions?.[0]?.bytesBase64Encoded;
@@ -1927,8 +2042,10 @@ ipcMain.handle(
                   personGeneration: 'ALLOW_ADULT',
                 },
               };
-              response = await axios.post(url, payload, {
-                headers: { 'Content-Type': 'application/json' },
+              response = await retryRequest(async () => {
+                return await axios.post(url, payload, {
+                  headers: { 'Content-Type': 'application/json' },
+                });
               });
 
               const imageBytes = response.data?.generatedImages?.[0]?.image?.imageBytes;

@@ -38,6 +38,10 @@ const BatchImageGenerator = ({ globalSettings }) => {
   const [currentProcessIndex, setCurrentProcessIndex] = useState(-1);
   const [outputDir, setOutputDir] = useState('');
 
+  const [poseImage, setPoseImage] = useState(null); // { file, base64, previewUrl }
+  const [bgImage, setBgImage] = useState(null); // { file, base64, previewUrl }
+  const [customImagePrompt, setCustomImagePrompt] = useState('');
+
   // Extract keys from globalSettings prop (falling back to localStorage if not passed)
   const activeOpenaiKey =
     globalSettings?.openaiKey ||
@@ -62,9 +66,14 @@ const BatchImageGenerator = ({ globalSettings }) => {
     const saved = localStorage.getItem('batch_gen_settings');
     const initialSettings = saved ? JSON.parse(saved) : {};
 
+    let geminiModel = initialSettings.geminiModel || 'gemini-2.5-flash';
+    if (geminiModel.startsWith('gemini-1.')) {
+      geminiModel = 'gemini-2.5-flash';
+    }
+
     return {
       promptProvider: initialSettings.promptProvider || 'gemini',
-      geminiModel: initialSettings.geminiModel || 'gemini-2.5-flash',
+      geminiModel: geminiModel,
       imagenModel: initialSettings.imagenModel || 'imagen-3.0-generate-002',
       videoProvider: initialSettings.videoProvider || 'google',
       videoModel: initialSettings.videoModel || 'veo-2.0-generate-001',
@@ -73,6 +82,22 @@ const BatchImageGenerator = ({ globalSettings }) => {
         'slow camera zoom, wind blowing hair gently, realistic physics, 4k cinematic',
     };
   });
+
+  const [motionPrompt, setMotionPrompt] = useState(settings.motionPrompt);
+
+  useEffect(() => {
+    setSettings((prev) => {
+      if (prev.motionPrompt === motionPrompt) return prev;
+      return { ...prev, motionPrompt };
+    });
+  }, [motionPrompt]);
+
+  useEffect(() => {
+    setMotionPrompt((prev) => {
+      if (prev === settings.motionPrompt) return prev;
+      return settings.motionPrompt;
+    });
+  }, [settings.motionPrompt]);
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [checkingModels, setCheckingModels] = useState(false);
@@ -92,26 +117,27 @@ const BatchImageGenerator = ({ globalSettings }) => {
 
   const getPromptModelsList = () => {
     const defaultModels = [
-      { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash (Tốt nhất cho tài khoản Free)' },
       { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (Tốc độ cao)' },
       { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
       { value: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
-      { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro (Độ chính xác cao)' },
-      { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+      { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (Độ chính xác cao)' },
     ];
 
     if (!supportedModels) return defaultModels;
 
     const filtered = supportedModels.filter(
-      (m) => m.startsWith('gemini-') && !m.includes('embedding') && !m.includes('image')
+      (m) =>
+        m.startsWith('gemini-') &&
+        !m.includes('gemini-1.') &&
+        !m.includes('embedding') &&
+        !m.includes('image')
     );
 
     if (filtered.length === 0) return defaultModels;
 
     return filtered.map((m) => {
       let label = m;
-      if (m === 'gemini-1.5-flash') label += ' (Free Tier)';
-      else if (m === 'gemini-2.0-flash') label += ' (Tốc độ cao)';
+      if (m === 'gemini-2.0-flash') label += ' (Tốc độ cao)';
       else if (m === 'gemini-2.5-flash') label += ' (Mới - Khuyên dùng)';
       else if (m === 'gemini-3.5-flash') label += ' (Mới nhất)';
       return { value: m, label };
@@ -196,14 +222,20 @@ const BatchImageGenerator = ({ globalSettings }) => {
 
         // Tự động kiểm tra và chuyển sang mô hình Gemini phù hợp nếu mô hình hiện tại không được hỗ trợ
         const textModels = modelNames.filter(
-          (m) => m.startsWith('gemini-') && !m.includes('embedding') && !m.includes('image')
+          (m) =>
+            m.startsWith('gemini-') &&
+            !m.includes('gemini-1.') &&
+            !m.includes('embedding') &&
+            !m.includes('image')
         );
         if (textModels.length > 0) {
           if (!textModels.includes(settings.geminiModel)) {
             let recommendedGemini = '';
             if (textModels.includes('gemini-2.5-flash')) recommendedGemini = 'gemini-2.5-flash';
-            else if (textModels.includes('gemini-2.0-flash')) recommendedGemini = 'gemini-2.0-flash';
-            else if (textModels.includes('gemini-3.5-flash')) recommendedGemini = 'gemini-3.5-flash';
+            else if (textModels.includes('gemini-2.0-flash'))
+              recommendedGemini = 'gemini-2.0-flash';
+            else if (textModels.includes('gemini-3.5-flash'))
+              recommendedGemini = 'gemini-3.5-flash';
             else recommendedGemini = textModels[0];
 
             setSettings((prev) => ({ ...prev, geminiModel: recommendedGemini }));
@@ -229,7 +261,8 @@ const BatchImageGenerator = ({ globalSettings }) => {
         if (veoModels.length > 0 && !veoModels.includes(settings.videoModel)) {
           let recommendedVeo = '';
           if (veoModels.includes('veo-3.0-generate-001')) recommendedVeo = 'veo-3.0-generate-001';
-          else if (veoModels.includes('veo-2.0-generate-001')) recommendedVeo = 'veo-2.0-generate-001';
+          else if (veoModels.includes('veo-2.0-generate-001'))
+            recommendedVeo = 'veo-2.0-generate-001';
           else recommendedVeo = veoModels[0];
 
           setSettings((prev) => ({ ...prev, videoModel: recommendedVeo }));
@@ -255,6 +288,32 @@ const BatchImageGenerator = ({ globalSettings }) => {
     };
     reader.readAsDataURL(file);
     return false; // Prevent auto-upload
+  };
+
+  const handlePoseUpload = (file) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      setPoseImage({
+        file,
+        base64: reader.result,
+        previewUrl: URL.createObjectURL(file),
+      });
+    };
+    reader.readAsDataURL(file);
+    return false;
+  };
+
+  const handleBgUpload = (file) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      setBgImage({
+        file,
+        base64: reader.result,
+        previewUrl: URL.createObjectURL(file),
+      });
+    };
+    reader.readAsDataURL(file);
+    return false;
   };
 
   const handleProductsUpload = (file) => {
@@ -285,11 +344,15 @@ const BatchImageGenerator = ({ globalSettings }) => {
 
   const startBatchProcess = async () => {
     if (!modelImage) {
-      message.warning('Vui lòng tải lên ảnh mẫu hoặc bối cảnh trước.');
+      message.warning('Vui lòng tải lên ảnh nhân vật mẫu (Ảnh 1).');
       return;
     }
     if (products.length === 0) {
-      message.warning('Vui lòng tải lên ít nhất một ảnh sản phẩm.');
+      message.warning('Vui lòng tải lên ít nhất một ảnh trang phục cần thử (Ảnh 2).');
+      return;
+    }
+    if (!poseImage) {
+      message.warning('Vui lòng tải lên ảnh dáng đứng & bối cảnh mẫu (Ảnh 3).');
       return;
     }
     if (!outputDir) {
@@ -332,6 +395,9 @@ const BatchImageGenerator = ({ globalSettings }) => {
         const promptResult = await window.electron.gptGenerateBlendPrompt({
           productImageBase64: products[i].base64,
           modelImageBase64: modelImage.base64,
+          poseImageBase64: poseImage.base64,
+          bgImageBase64: bgImage ? bgImage.base64 : '',
+          customImagePrompt: customImagePrompt,
           apiKey: settings.promptProvider === 'gemini' ? activeGeminiKey : activeOpenaiKey,
           provider: settings.promptProvider,
           geminiModel: settings.geminiModel,
@@ -372,7 +438,7 @@ const BatchImageGenerator = ({ globalSettings }) => {
 
           const videoResult = await window.electron.aiImageToVideo({
             imagePath: blendedImagePath,
-            motionPrompt: settings.motionPrompt,
+            motionPrompt: motionPrompt,
             replicateKey: activeReplicateKey,
             geminiKey: activeGeminiKey,
             provider: settings.videoProvider,
@@ -512,6 +578,32 @@ const BatchImageGenerator = ({ globalSettings }) => {
   return (
     <div className="tool-container batch-generator-container">
       <Card variant="borderless" className="tool-card">
+        {isProcessing && (
+          <div className="tool-card-overlay">
+            <div className="premium-spinner" />
+            <div className="tool-card-overlay-text">
+              {currentProcessIndex >= 0
+                ? `Đang sản xuất sản phẩm thứ ${currentProcessIndex + 1}/${products.length}...`
+                : 'Đang bắt đầu sản xuất hàng loạt...'}
+            </div>
+            <div className="tool-card-overlay-subtext">
+              AI đang chạy kết hợp 3 bước: phân tích prompt, sinh ảnh ghép và tạo chuyển động video
+              ngắn. Vui lòng giữ ứng dụng mở.
+            </div>
+            {products.length > 0 && (
+              <div className="overlay-progress-container">
+                <Progress
+                  percent={
+                    currentProcessIndex >= 0
+                      ? Math.round((currentProcessIndex / products.length) * 100)
+                      : 0
+                  }
+                  strokeColor="#0d9488"
+                />
+              </div>
+            )}
+          </div>
+        )}
         <header className="tool-header">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
@@ -531,21 +623,13 @@ const BatchImageGenerator = ({ globalSettings }) => {
           </div>
         </header>
 
-        <Alert
-          message="Quy trình tự động 3 bước"
-          description="Đưa ảnh sản phẩm + ảnh bối cảnh mẫu ➔ AI tự động viết prompt ghép mẫu ➔ Imagen 3 sinh ảnh ghép hoàn mỹ ➔ Luma/Veo tạo chuyển động video ngắn."
-          type="info"
-          showIcon
-          style={{ marginBottom: '24px', borderRadius: '12px' }}
-        />
-
         <Row gutter={[32, 32]} className="batch-grid-row">
           {/* Left Side: Upload Panel */}
           <Col xs={24} lg={9} className="batch-controls-panel">
             <Card
               title={
                 <Space>
-                  <PictureOutlined style={{ color: '#0d9488' }} /> 1. Bối cảnh / Người mẫu mẫu
+                  <PictureOutlined style={{ color: '#0d9488' }} /> 1. Ảnh nhân vật mẫu (Face/Body)
                 </Space>
               }
               className="card-custom"
@@ -554,6 +638,7 @@ const BatchImageGenerator = ({ globalSettings }) => {
                 beforeUpload={handleModelUpload}
                 showUploadList={false}
                 className="dragger-custom"
+                disabled={isProcessing}
               >
                 {modelImage ? (
                   <div className="preview-container">
@@ -563,13 +648,13 @@ const BatchImageGenerator = ({ globalSettings }) => {
                       className="model-preview"
                     />
                     <div className="upload-overlay">
-                      <UploadOutlined /> Thay đổi ảnh mẫu
+                      <UploadOutlined /> Thay đổi ảnh nhân vật
                     </div>
                   </div>
                 ) : (
                   <div className="upload-placeholder">
                     <UploadOutlined className="upload-icon" />
-                    <p>Kéo thả hoặc nhấp để tải lên bối cảnh nền / người mẫu mẫu</p>
+                    <p>Kéo thả hoặc nhấp để tải ảnh nhân vật mẫu</p>
                   </div>
                 )}
               </Upload.Dragger>
@@ -578,21 +663,32 @@ const BatchImageGenerator = ({ globalSettings }) => {
             <Card
               title={
                 <Space>
-                  <UploadOutlined style={{ color: '#0d9488' }} /> 2. Danh sách sản phẩm hàng loạt
+                  <UploadOutlined style={{ color: '#0d9488' }} /> 2. Danh sách trang phục hàng loạt
                 </Space>
               }
               className="card-custom"
             >
-              <Upload beforeUpload={handleProductsUpload} multiple showUploadList={false}>
-                <Button icon={<UploadOutlined />} type="dashed" block className="upload-btn-dashed">
-                  Chọn nhiều ảnh sản phẩm
+              <Upload
+                beforeUpload={handleProductsUpload}
+                multiple
+                showUploadList={false}
+                disabled={isProcessing}
+              >
+                <Button
+                  icon={<UploadOutlined />}
+                  type="dashed"
+                  block
+                  className="upload-btn-dashed"
+                  disabled={isProcessing}
+                >
+                  Chọn nhiều ảnh trang phục
                 </Button>
               </Upload>
 
               {products.length > 0 && (
                 <div className="queue-summary">
                   <span>
-                    Đã tải lên: <strong>{products.length}</strong> sản phẩm
+                    Đã tải lên: <strong>{products.length}</strong> trang phục
                   </span>
                   <Button type="link" danger onClick={clearQueue} disabled={isProcessing}>
                     Xóa danh sách
@@ -604,7 +700,119 @@ const BatchImageGenerator = ({ globalSettings }) => {
             <Card
               title={
                 <Space>
-                  <FolderOpenOutlined style={{ color: '#0d9488' }} /> 3. Nơi lưu kết quả
+                  <PictureOutlined style={{ color: '#0d9488' }} /> 3. Ảnh dáng đứng & bối cảnh mẫu
+                </Space>
+              }
+              className="card-custom"
+            >
+              <Upload.Dragger
+                beforeUpload={handlePoseUpload}
+                showUploadList={false}
+                className="dragger-custom"
+                disabled={isProcessing}
+              >
+                {poseImage ? (
+                  <div className="preview-container">
+                    <img src={poseImage.previewUrl} alt="Pose Template" className="model-preview" />
+                    <div className="upload-overlay">
+                      <UploadOutlined /> Thay đổi ảnh dáng đứng
+                    </div>
+                  </div>
+                ) : (
+                  <div className="upload-placeholder">
+                    <UploadOutlined className="upload-icon" />
+                    <p>Kéo thả hoặc nhấp để tải dáng đứng & bối cảnh mẫu</p>
+                  </div>
+                )}
+              </Upload.Dragger>
+            </Card>
+
+            <Card
+              title={
+                <Space>
+                  <PictureOutlined style={{ color: '#0d9488' }} /> 4. Ảnh bối cảnh tùy chọn (Không
+                  bắt buộc)
+                </Space>
+              }
+              className="card-custom"
+            >
+              <Upload.Dragger
+                beforeUpload={handleBgUpload}
+                showUploadList={false}
+                className="dragger-custom"
+                disabled={isProcessing}
+              >
+                {bgImage ? (
+                  <div className="preview-container">
+                    <img
+                      src={bgImage.previewUrl}
+                      alt="Background Template"
+                      className="model-preview"
+                    />
+                    <div className="upload-overlay">
+                      <UploadOutlined /> Thay đổi ảnh bối cảnh
+                    </div>
+                  </div>
+                ) : (
+                  <div className="upload-placeholder">
+                    <UploadOutlined className="upload-icon" />
+                    <p>Trống (Mặc định lấy bối cảnh của Ảnh 3)</p>
+                  </div>
+                )}
+              </Upload.Dragger>
+              {bgImage && (
+                <Button
+                  type="link"
+                  danger
+                  onClick={() => setBgImage(null)}
+                  disabled={isProcessing}
+                  style={{ marginTop: '8px', padding: 0 }}
+                >
+                  Xóa ảnh bối cảnh tùy chọn
+                </Button>
+              )}
+            </Card>
+
+            <Card
+              title={
+                <Space>
+                  <SettingOutlined style={{ color: '#0d9488' }} /> 5. Cấu hình Prompt tùy chọn
+                </Space>
+              }
+              className="card-custom"
+            >
+              <div className="settings-form" style={{ padding: 0 }}>
+                <div className="form-item" style={{ marginBottom: '12px' }}>
+                  <label style={{ fontSize: '11px', fontWeight: 600, color: '#475569' }}>
+                    Prompt tạo ảnh bổ sung (Tùy chọn)
+                  </label>
+                  <Input.TextArea
+                    rows={3}
+                    placeholder="Mô tả chất liệu, phong cách hoặc ánh sáng bổ sung..."
+                    value={customImagePrompt}
+                    onChange={(e) => setCustomImagePrompt(e.target.value)}
+                    disabled={isProcessing}
+                  />
+                </div>
+                <div className="form-item" style={{ marginBottom: 0 }}>
+                  <label style={{ fontSize: '11px', fontWeight: 600, color: '#475569' }}>
+                    Prompt tạo chuyển động video
+                  </label>
+                  <Input.TextArea
+                    rows={3}
+                    placeholder="Ví dụ: slow camera zoom, wind blowing hair..."
+                    value={motionPrompt}
+                    onChange={(e) => setMotionPrompt(e.target.value)}
+                    disabled={isProcessing}
+                  />
+                </div>
+              </div>
+            </Card>
+
+            <Card
+              title={
+                <Space>
+                  <FolderOpenOutlined style={{ color: '#0d9488' }} /> Nơi lưu kết quả
                 </Space>
               }
               className="card-custom"
@@ -616,7 +824,11 @@ const BatchImageGenerator = ({ globalSettings }) => {
                   readOnly
                   className="dir-input"
                 />
-                <Button icon={<FolderOpenOutlined />} onClick={selectOutputDir} />
+                <Button
+                  icon={<FolderOpenOutlined />}
+                  onClick={selectOutputDir}
+                  disabled={isProcessing}
+                />
               </div>
             </Card>
 

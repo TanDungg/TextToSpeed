@@ -251,6 +251,13 @@ const TextToSpeed = ({ settings }) => {
   return (
     <div className="tool-container tts-container">
       <Card variant="borderless" className="tool-card">
+        {loading && (
+          <div className="tool-card-overlay">
+            <div className="premium-spinner" />
+            <div className="tool-card-overlay-text">Đang tạo giọng nói AI...</div>
+            <div className="tool-card-overlay-subtext">Hệ thống đang kết nối với máy chủ AI và tạo tệp âm thanh. Vui lòng đợi trong giây lát.</div>
+          </div>
+        )}
         <header className="tool-header">
           <h1 className="tool-gradient-title">AI Voice Master</h1>
           <div className="tool-status-bar">

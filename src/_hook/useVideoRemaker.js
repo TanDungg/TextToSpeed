@@ -93,6 +93,7 @@ export const useVideoRemaker = (settings) => {
     publishYoutube: false,
     publishFacebook: false,
     publishTiktok: false,
+    blurBorder: false,
   });
   const [showSrtModal, setShowSrtModal] = useState(false);
   const [srtText, setSrtText] = useState('');
@@ -104,6 +105,9 @@ export const useVideoRemaker = (settings) => {
       return [];
     }
   });
+
+  const [videoSource, setVideoSource] = useState('url'); // 'url' or 'file'
+  const [localFilePath, setLocalFilePath] = useState('');
 
   const getBasename = (filePath) => {
     if (!filePath) return '';
@@ -130,10 +134,34 @@ export const useVideoRemaker = (settings) => {
       }
     };
     checkEnv();
-  }, [settings?.useCloudEngine]);
+  }, [settings]);
+
+  const handleSelectFile = async () => {
+    if (!window.electron || window.electron.isWebMock) {
+      message.error('Ứng dụng cần chạy trong Electron để duyệt file hệ thống.');
+      return;
+    }
+    try {
+      const res = await window.electron.selectFile('video');
+      if (res.canceled || !res.filePaths || res.filePaths.length === 0) {
+        return;
+      }
+      const filePath = res.filePaths[0];
+      setLocalFilePath(filePath);
+      addLog(`Đã chọn video cục bộ: ${filePath}`, 'success');
+      message.success('Chọn video thành công!');
+    } catch (error) {
+      message.error('Không thể chọn video: ' + error.message);
+    }
+  };
 
   const handleStart = async () => {
-    if (!url) return message.warning('Vui lòng nhập link video (Douyin, Youtube, Facebook...)');
+    if (videoSource === 'url' && !url) {
+      return message.warning('Vui lòng nhập link video (Douyin, Youtube, Facebook...)');
+    }
+    if (videoSource === 'file' && !localFilePath) {
+      return message.warning('Vui lòng chọn video từ máy tính.');
+    }
 
     const isWeb = !window.electron || window.electron.isWebMock;
     const effectiveOpenAIKey = settings?.openaiKey || (isWeb ? 'SERVER_KEY' : '');
@@ -142,28 +170,43 @@ export const useVideoRemaker = (settings) => {
     setLoading(true);
     setLogs([]);
     setProgress(0);
-    setStatus('downloading');
-    addLog(`Bắt đầu xử lý: ${url}`);
 
     try {
-      // Step 1: Download
-      addLog('Đang tải video qua yt-dlp...', 'process');
-      const downloadRes = await VideoRemakerService.videoDownload(url, settings);
+      let inputPath = '';
+      let originalTitle = '';
+      let originalDesc = '';
+      let downloadRes = null;
 
-      if (!downloadRes.ok) {
-        throw new Error(downloadRes.error);
+      if (videoSource === 'file') {
+        setStatus('remaking');
+        inputPath = localFilePath;
+        originalTitle = getBasename(localFilePath);
+        originalDesc = 'Tệp video cục bộ';
+        setProgress(40);
+        addLog(`Sử dụng video cục bộ: ${inputPath}`, 'success');
+      } else {
+        setStatus('downloading');
+        addLog(`Bắt đầu xử lý: ${url}`);
+        // Step 1: Download
+        addLog('Đang tải video qua yt-dlp...', 'process');
+        downloadRes = await VideoRemakerService.videoDownload(url, settings);
+
+        if (!downloadRes.ok) {
+          throw new Error(downloadRes.error);
+        }
+
+        inputPath = downloadRes.path;
+        originalTitle = downloadRes.videoTitle || '';
+        originalDesc = downloadRes.videoDescription || '';
+        setProgress(40);
+        addLog(`Đã tải video: ${inputPath}`, 'success');
       }
-
-      const inputPath = downloadRes.path;
-      const originalTitle = downloadRes.videoTitle || '';
-      const originalDesc = downloadRes.videoDescription || '';
-      setProgress(40);
-      addLog(`Đã tải video: ${inputPath}`, 'success');
 
       // Step 2: Transcribe & Extract original audio
       let srtContent = '';
       let originalAudioPath = '';
-      const hasSubtitles = !!downloadRes.subContent;
+      const hasSubtitles =
+        videoSource === 'file' || !downloadRes ? false : !!downloadRes.subContent;
       let finalSegments = [];
 
       if (options.transcribe) {
@@ -235,7 +278,10 @@ export const useVideoRemaker = (settings) => {
               addLog('Đang sử dụng Google Gemini để trích xuất phụ đề (Free)...', 'process');
 
               addLog('Đang tối ưu dung lượng tệp âm thanh cho AI (Nén sang MP3)...', 'process');
-              const compressRes = await VideoRemakerService.compressAudio(originalAudioPath, settings);
+              const compressRes = await VideoRemakerService.compressAudio(
+                originalAudioPath,
+                settings
+              );
               let audioToRead = originalAudioPath;
               let mimeType = 'audio/wav';
 
@@ -262,10 +308,7 @@ CHỈ trả về duy nhất chuỗi nội dung SRT thuần túy. Tuyệt đối 
               const modelsToTry = [
                 { name: 'gemini-2.5-flash', version: 'v1beta' },
                 { name: 'gemini-2.0-flash', version: 'v1beta' },
-                { name: 'gemini-1.5-flash', version: 'v1' },
-                { name: 'gemini-1.5-flash', version: 'v1beta' },
-                { name: 'gemini-1.5-flash-8b', version: 'v1' },
-                { name: 'gemini-1.5-flash-8b', version: 'v1beta' },
+                { name: 'gemini-3.5-flash', version: 'v1beta' },
               ];
               let response = null;
               let successModel = '';
@@ -284,27 +327,31 @@ CHỈ trả về duy nhất chuỗi nội dung SRT thuần túy. Tuyệt đối 
                     `Thử trích xuất phụ đề bằng model: ${modelName} (${apiVer})...`,
                     'process'
                   );
-                  const res = await VideoRemakerService.ttsRequest(geminiUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: {
-                      contents: [
-                        {
-                          parts: [
-                            {
-                              inlineData: {
-                                mimeType: mimeType,
-                                data: base64Audio,
+                  const res = await VideoRemakerService.ttsRequest(
+                    geminiUrl,
+                    {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: {
+                        contents: [
+                          {
+                            parts: [
+                              {
+                                inlineData: {
+                                  mimeType: mimeType,
+                                  data: base64Audio,
+                                },
                               },
-                            },
-                            {
-                              text: prompt,
-                            },
-                          ],
-                        },
-                      ],
+                              {
+                                text: prompt,
+                              },
+                            ],
+                          },
+                        ],
+                      },
                     },
-                  }, settings);
+                    settings
+                  );
 
                   if (res.ok) {
                     const textResult = res.data?.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -526,10 +573,7 @@ Hãy trả về duy nhất chuỗi JSON có cấu trúc như sau, không bọc t
           const modelsToTry = [
             { name: 'gemini-2.5-flash', version: 'v1beta' },
             { name: 'gemini-2.0-flash', version: 'v1beta' },
-            { name: 'gemini-1.5-flash', version: 'v1' },
-            { name: 'gemini-1.5-flash', version: 'v1beta' },
-            { name: 'gemini-1.5-flash-8b', version: 'v1' },
-            { name: 'gemini-1.5-flash-8b', version: 'v1beta' },
+            { name: 'gemini-3.5-flash', version: 'v1beta' },
           ];
           for (const modelCfg of modelsToTry) {
             const modelName = modelCfg.name;
@@ -541,13 +585,17 @@ Hãy trả về duy nhất chuỗi JSON có cấu trúc như sau, không bọc t
                   : `https://generativelanguage.googleapis.com/${apiVer}/models/${modelName}:generateContent?key=${effectiveGeminiKey}`;
 
               addLog(`Thử sinh Metadata bằng model: ${modelName} (${apiVer})...`, 'process');
-              const res = await VideoRemakerService.ttsRequest(geminiUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: {
-                  contents: [{ parts: [{ text: metaPrompt }] }],
+              const res = await VideoRemakerService.ttsRequest(
+                geminiUrl,
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: {
+                    contents: [{ parts: [{ text: metaPrompt }] }],
+                  },
                 },
-              }, settings);
+                settings
+              );
 
               if (res.ok) {
                 let resText = res.data?.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -707,6 +755,11 @@ Hãy trả về duy nhất chuỗi JSON có cấu trúc như sau, không bọc t
     handleStart,
     addLog,
     getBasename,
+    videoSource,
+    setVideoSource,
+    localFilePath,
+    setLocalFilePath,
+    handleSelectFile,
   };
 };
 
