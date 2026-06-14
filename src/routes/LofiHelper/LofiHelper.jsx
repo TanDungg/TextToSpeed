@@ -83,7 +83,7 @@ const LofiHelper = ({ settings }) => {
     }
 
     try {
-      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${settings.geminiKey}`;
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${settings.geminiKey}`;
       const prompt = `Identify the musical Key (e.g., A minor, C major, F# major) and original BPM (integer value) of the song: "${songTitle}". 
 Return ONLY a valid JSON object in the exact format: {"key": "A minor", "bpm": 120}. Do not include markdown tags, code blocks, or extra text.`;
 
@@ -197,9 +197,32 @@ Return ONLY a valid JSON object in the exact format: {"key": "A minor", "bpm": 1
     }
   };
 
+  const isLofiRunning = loadingMetadata || loadingBeats || downloading;
+
+  const getLofiStatusText = () => {
+    if (loadingMetadata) return 'Đang phân tích bài hát & dự đoán Tông/BPM bằng AI...';
+    if (loadingBeats) return 'Đang tìm kiếm Lofi Beat phù hợp trên YouTube...';
+    if (downloading) return 'Đang tải xuống và đóng gói dự án Remix...';
+    return 'Đang xử lý...';
+  };
+
   return (
     <div className="tool-container lofi-helper-container">
       <Card variant="borderless" className="tool-card">
+        {isLofiRunning && (
+          <div className="tool-card-overlay">
+            <div className="premium-spinner" />
+            <div className="tool-card-overlay-text">{getLofiStatusText()}</div>
+            <div className="tool-card-overlay-subtext">
+              Hệ thống đang tiến hành xử lý qua luồng ngầm Electron. Vui lòng giữ ứng dụng mở cho đến khi hoàn thành.
+            </div>
+            {downloading && (
+              <div className="overlay-progress-container">
+                <Progress percent={progress} strokeColor="#0d9488" />
+              </div>
+            )}
+          </div>
+        )}
         <header className="tool-header">
           <h1 className="tool-gradient-title">Lofi Remix Helper</h1>
           <div className="tool-status-bar">

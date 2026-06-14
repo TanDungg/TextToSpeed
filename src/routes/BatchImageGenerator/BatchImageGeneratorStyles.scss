@@ -59,15 +59,23 @@
   }
  
   .dragger-custom {
-    background: #f8fafc !important;
-    border: 2px dashed rgba(13, 148, 136, 0.25) !important;
-    border-radius: 12px !important;
+    background: transparent !important;
+    border: none !important;
     overflow: hidden;
     transition: all 0.3s ease;
 
+    :global(.ant-upload-drag) {
+      background: #f8fafc !important;
+      border: 2px dashed rgba(13, 148, 136, 0.25) !important;
+      border-radius: 12px !important;
+      transition: all 0.3s ease;
+    }
+
     &:hover {
-      border-color: var(--primary) !important;
-      background: rgba(13, 148, 136, 0.03) !important;
+      :global(.ant-upload-drag) {
+        border-color: var(--primary) !important;
+        background: rgba(13, 148, 136, 0.03) !important;
+      }
     }
 
     .upload-placeholder {

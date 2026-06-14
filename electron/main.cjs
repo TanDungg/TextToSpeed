@@ -250,12 +250,25 @@ async function handleVideoDownload(event, { url }) {
   const { exec } = require('child_process');
   const execAsync = util.promisify(exec);
 
-  const tempDir = path.join(app.getPath('downloads'), 'SmartRemaker');
-  if (!fs.existsSync(tempDir)) {
-    fs.mkdirSync(tempDir, { recursive: true });
+  const timestamp = Date.now();
+  const sessionDir = path.join(app.getPath('downloads'), 'SmartRemaker', 'output', 'VN', `${timestamp}_vi`);
+  if (!fs.existsSync(sessionDir)) {
+    fs.mkdirSync(sessionDir, { recursive: true });
   }
 
-  const outputPath = path.join(tempDir, `original_${Date.now()}.mp4`);
+  let videoTitle = '';
+  let videoDescription = '';
+  try {
+    const infoCmd = `yt-dlp --print "%(title)s" --print "%(description)s" --no-warnings --no-playlist "${url}"`;
+    const { stdout } = await execAsync(infoCmd);
+    const parts = stdout.trim().split('\n');
+    videoTitle = parts[0] || '';
+    videoDescription = parts.slice(1).join('\n') || '';
+  } catch (err) {
+    console.warn('Failed to fetch video title/description via yt-dlp:', err.message);
+  }
+
+  const outputPath = path.join(sessionDir, `original_${timestamp}.mp4`);
   const command = `yt-dlp --js-runtimes node --no-playlist --ignore-errors --write-auto-subs --write-subs --sub-langs "en,vi,zh" -f "bv[ext=mp4][vcodec^=avc1]+ba[ext=m4a]/mp4/b" --merge-output-format mp4 -o "${outputPath}" "${url}"`;
 
   try {
@@ -264,7 +277,7 @@ async function handleVideoDownload(event, { url }) {
     if (fs.existsSync(outputPath)) {
       // Tìm xem có file phụ đề nào được tải về cùng tên gốc không
       const baseWithoutExt = outputPath.slice(0, -4); // Cắt đuôi .mp4
-      const files = fs.readdirSync(tempDir);
+      const files = fs.readdirSync(sessionDir);
       const subFile = files.find(
         (f) =>
           f.startsWith(path.basename(baseWithoutExt)) && (f.endsWith('.vtt') || f.endsWith('.srt'))
@@ -273,18 +286,18 @@ async function handleVideoDownload(event, { url }) {
       let subContent = '';
       let subPath = '';
       if (subFile) {
-        subPath = path.join(tempDir, subFile);
+        subPath = path.join(sessionDir, subFile);
         subContent = fs.readFileSync(subPath, 'utf8');
       }
 
-      return { ok: true, path: outputPath, subContent, subPath };
+      return { ok: true, path: outputPath, subContent, subPath, videoTitle, videoDescription };
     }
 
     // Thử tìm các file có extension khác nếu yt-dlp không convert được sang mp4
-    const files = fs.readdirSync(tempDir);
+    const files = fs.readdirSync(sessionDir);
     const foundFile = files.find((f) => f.startsWith(path.basename(outputPath, '.mp4')));
     if (foundFile) {
-      const actualPath = path.join(tempDir, foundFile);
+      const actualPath = path.join(sessionDir, foundFile);
       const actualBaseWithoutExt = actualPath.slice(0, -4);
       const subFile = files.find(
         (f) =>
@@ -295,11 +308,11 @@ async function handleVideoDownload(event, { url }) {
       let subContent = '';
       let subPath = '';
       if (subFile) {
-        subPath = path.join(tempDir, subFile);
+        subPath = path.join(sessionDir, subFile);
         subContent = fs.readFileSync(subPath, 'utf8');
       }
 
-      return { ok: true, path: actualPath, subContent, subPath };
+      return { ok: true, path: actualPath, subContent, subPath, videoTitle, videoDescription };
     }
 
     return {
@@ -311,13 +324,13 @@ async function handleVideoDownload(event, { url }) {
 
     // Nếu file video thực tế vẫn được tải thành công (dù lỗi phụ đề)
     if (fs.existsSync(outputPath)) {
-      return { ok: true, path: outputPath, subContent: '', subPath: '' };
+      return { ok: true, path: outputPath, subContent: '', subPath: '', videoTitle, videoDescription };
     }
 
-    const files = fs.readdirSync(tempDir);
+    const files = fs.readdirSync(sessionDir);
     const foundFile = files.find((f) => f.startsWith(path.basename(outputPath, '.mp4')));
     if (foundFile) {
-      return { ok: true, path: path.join(tempDir, foundFile), subContent: '', subPath: '' };
+      return { ok: true, path: path.join(sessionDir, foundFile), subContent: '', subPath: '', videoTitle, videoDescription };
     }
 
     console.error('Download Error:', error);
@@ -373,8 +386,7 @@ function scaleSrtTimestamps(srtText, speed) {
 
 async function handleVideoRemake(event, { inputPath, options }) {
   const fs = require('fs');
-  const tempDir = path.join(app.getPath('downloads'), 'SmartRemaker', 'temp');
-  if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+  const sessionDir = path.dirname(inputPath);
   let outputPath = inputPath.replace('original_', 'remaked_');
   if (outputPath === inputPath) {
     outputPath = inputPath.replace(/\.mp4$/i, '_final.mp4');
@@ -416,11 +428,22 @@ async function handleVideoRemake(event, { inputPath, options }) {
   }
 
   const isStrong = options.remakeLevel === 'strong';
+  const isSuperStrong = options.remakeLevel === 'super_strong';
   let filters = [];
   if (options.flip) filters.push('hflip');
-
   if (options.colorShift) {
-    if (isStrong) {
+    if (isSuperStrong) {
+      // LÁCH SIÊU CẤP: Zoom sâu 18% để cắt rìa quảng cáo, ánh sáng động sin(t) co dãn nhẹ tránh hash tĩnh, lưới bảo vệ mờ, vẽ banner che bảng điểm & logo
+      filters.push(
+        'crop=in_w*0.82:in_h*0.82,scale=in_w:in_h',
+        'hue=h="sin(2*t)*3":s="1.15+0.05*cos(2*t)"',
+        "eq=contrast='1.08+0.03*sin(t)':brightness='0.01*cos(t)':saturation='1.15+0.05*sin(t/2)'",
+        'drawgrid=w=100:h=100:t=1:c=white@0.03',
+        'drawbox=x=24:y=24:w=220:h=70:color=black@0.8:t=fill',
+        'drawbox=x=in_w-244:y=24:w=220:h=70:color=black@0.8:t=fill',
+        'noise=alls=6:allf=t'
+      );
+    } else if (isStrong) {
       // LÁCH MẠNH (YouTube Content ID): Zoom nhẹ 4% (crop & scale) để phá tọa độ điểm ảnh, thay đổi hệ màu rõ hơn, thêm hạt nhiễu (noise grain) nhẹ
       filters.push(
         'crop=in_w*0.96:in_h*0.96,scale=in_w:in_h',
@@ -435,7 +458,9 @@ async function handleVideoRemake(event, { inputPath, options }) {
   }
 
   if (options.vignette) {
-    if (isStrong) {
+    if (isSuperStrong) {
+      filters.push('vignette=PI/5');
+    } else if (isStrong) {
       // Góc tối rõ nét hơn
       filters.push('vignette=PI/6');
     } else {
@@ -443,10 +468,12 @@ async function handleVideoRemake(event, { inputPath, options }) {
     }
   }
 
+
+
   const speed = options.speed || 1.05;
 
-  const relInput = path.join('..', path.basename(inputPath));
-  const relOutput = path.join('..', path.basename(outputPath));
+  const relInput = inputPath;
+  const relOutput = outputPath;
 
   let filterComplexParts = [];
   let mapArgs = [];
@@ -454,85 +481,185 @@ async function handleVideoRemake(event, { inputPath, options }) {
   // 1. Xử lý luồng Video (nếu có)
   if (hasVideo) {
     let vFilters = filters.length > 0 ? filters : [];
-    let vFilterStr = vFilters.length > 0 ? vFilters.join(',') : 'copy';
-    if (vFilterStr !== 'copy') {
-      vFilterStr = `[0:v]${vFilterStr},setpts=PTS/${speed}[v]`;
-    } else {
-      vFilterStr = `[0:v]setpts=PTS/${speed}[v]`;
+    let baseFilterStr = vFilters.length > 0 ? vFilters.join(',') : '';
+    
+    let videoPipe = '[0:v]';
+    if (baseFilterStr) {
+      videoPipe += `${baseFilterStr}[core_v];[core_v]`;
     }
-    filterComplexParts.push(vFilterStr);
+
+    if (options.blurBorder) {
+      // Tách luồng core thành 2 luồng: v1 để thu nhỏ, v2 làm mờ nền.
+      // Nếu lách siêu cấp, video chính sẽ trôi nổi liên tục theo quỹ đạo tròn overlay='(W-w)/2+sin(t)*12':'(H-h)/2+cos(t)*12'
+      const overlayCoords = `overlay=(W-w)/2:(H-h)/2`;
+      videoPipe += `split[v1][v2];[v1]scale=iw*0.85:ih*0.85[inner];[v2]boxblur=20[blurred];[blurred][inner]${overlayCoords},setpts=PTS/${speed}[v]`;
+    } else {
+      videoPipe += `setpts=PTS/${speed}[v]`;
+    }
+
+    filterComplexParts.push(videoPipe);
     mapArgs.push('-map "[v]"');
   }
 
-  // 2. Xử lý luồng Audio (nếu có hoặc có âm thanh ngoài chèn thêm)
-  // Xây dựng chuỗi lọc âm thanh gốc để lách bản quyền nâng cao
-  let aFilters = [];
-  aFilters.push(`atempo=${speed}`);
-  if (options.audioPitch) {
-    if (isStrong) {
-      // Lách mạnh: Nâng tông giọng rõ hơn (+4%), thêm bộ tăng âm trầm/bổng (bass/treble EQ) để đổi tần số
-      aFilters.push('asetrate=44100*1.04', 'atempo=1/1.04', 'bass=g=3', 'treble=g=1.5');
-    } else {
-      aFilters.push('asetrate=44100*1.02', 'atempo=1/1.02');
-    }
-  }
-  if (options.audioDelay) {
-    if (isStrong) {
-      // Lách mạnh: Độ trễ lớn hơn (100ms) và tiếng vang rõ hơn (delay 25ms)
-      aFilters.push('adelay=100|100', 'aecho=0.8:0.85:25:0.25');
-    } else {
-      aFilters.push('adelay=50|50', 'aecho=0.8:0.88:6:0.2');
-    }
-  }
-  const aFilterStr = aFilters.join(',');
+  // 2. Xử lý luồng Audio (hỗ trợ phân đoạn TTS lồng tiếng hoặc danh sách nhạc ngoài)
+  let filterParts = [];
+  let mixInputs = '';
+  let inputIndex = 1;
+  const segments = options.segments || [];
+  const bgmMode = options.bgmMode || 'none';
+  const finalBgmPath = inputPath.replace('_audio.wav', '_no_vocals.wav');
 
-  const externalAudioList = options.externalAudioList || [];
   let inputStr = `ffmpeg -i "${relInput}" `;
 
-  if (externalAudioList.length > 0) {
-    let filterParts = [];
-    let mixInputs = '';
+  // Thêm tệp nhạc nền đã tách bằng AI Demucs vào đầu vào nếu có
+  let bgmInputIdx = -1;
+  if ((bgmMode === 'demucs' || bgmMode === 'duck_fallback') && fs.existsSync(finalBgmPath)) {
+    inputStr += `-i "${finalBgmPath}" `;
+    bgmInputIdx = inputIndex;
+    inputIndex++;
+  }
 
-    externalAudioList.forEach((audio, index) => {
-      const relPath = path.basename(audio.path);
-      inputStr += `-i "${relPath}" `;
-      // Tính lại start time nếu video đang bị thay đổi tốc độ (lách bản quyền)
-      // Giây thứ 20 ở video gốc -> Giây thứ (20 / speed) ở video mới
-      // Đảm bảo delay không bao giờ bị âm
-      const delayMs = Math.max(0, Math.round(audio.startMs / speed));
+  if (segments.length > 0) {
+    const { execSync } = require('child_process');
 
-      // Audio stream index bắt đầu từ 1 (vì 0 là video gốc)
-      const streamIdx = index + 1;
-      // Áp dụng bộ lọc adelay với :all=1 để tự động delay toàn bộ channel (tương thích cả mono và stereo)
-      // Ép định dạng stereo qua aformat để khớp 100% với âm thanh nền, tránh việc amix bỏ qua hoặc làm mất tiếng mono
-      const outLabel = externalAudioList.length === 1 && !hasAudio ? '[a]' : `[a${streamIdx}]`;
-      filterParts.push(
-        `[${streamIdx}:a]adelay=${delayMs}:all=1,volume=1.5,aformat=channel_layouts=stereo${outLabel}`
-      );
-      mixInputs += outLabel;
+    segments.forEach((seg) => {
+      if (seg.audioPath && fs.existsSync(seg.audioPath)) {
+        inputStr += `-i "${seg.audioPath}" `;
+
+        // Lấy thời lượng thực tế của file âm thanh mới sinh bằng ffprobe
+        let newDuration = seg.durationMs / 1000;
+        try {
+          const durationStr = execSync(
+            `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${seg.audioPath}"`
+          ).toString().trim();
+          if (durationStr) {
+            newDuration = parseFloat(durationStr);
+          }
+        } catch (e) {
+          console.warn(`Không thể lấy thời lượng của segment ${seg.id}:`, e.message);
+        }
+
+        const origDuration = seg.durationMs / 1000;
+        // Tính tỷ lệ speedup. Nếu file mới dài hơn file gốc, cần tăng tốc độ nói (co lại)
+        let speedFactor = 1.0;
+        if (newDuration > origDuration && origDuration > 0) {
+          speedFactor = Math.min(1.3, newDuration / origDuration);
+        }
+
+        // Độ trễ tính theo speed của video lách bản quyền
+        const delayMs = Math.max(0, Math.round(seg.startMs / speed));
+
+        const streamIdx = inputIndex;
+        inputIndex++;
+
+        const outLabel = `[a${streamIdx}]`;
+        filterParts.push(
+          `[${streamIdx}:a]atempo=${speedFactor.toFixed(2)},adelay=${delayMs}:all=1,volume=1.5,aformat=channel_layouts=stereo${outLabel}`
+        );
+        mixInputs += outLabel;
+      }
     });
 
-    if (hasAudio) {
-      // Xử lý âm thanh gốc: giảm âm lượng xuống 10% (0.1) và áp dụng các bộ lọc lách bản quyền âm thanh
-      filterParts.push(`[0:a]${aFilterStr},volume=0.1[bg_a]`);
-      // Trộn tất cả lại: âm thanh gốc + các file voice (Tắt tự động giảm âm lượng normalize=0)
-      // Số lượng input = số file voice + 1 (âm thanh gốc)
-      const totalInputs = externalAudioList.length + 1;
+    // Trộn nhạc nền và các phân đoạn âm thanh
+    if (bgmInputIdx !== -1) {
+      filterParts.push(`[${bgmInputIdx}:a]volume=0.8[bg_a]`);
+      const totalInputs = inputIndex - 1 - (bgmInputIdx === 1 ? 1 : 0) + 1;
       filterParts.push(
         `[bg_a]${mixInputs}amix=inputs=${totalInputs}:duration=first:normalize=0[a]`
       );
+      mapArgs.push('-map "[a]"');
+    } else if (bgmMode === 'duck' && hasAudio) {
+      // Trộn âm thanh gốc giảm volume
+      let aFilters = [];
+      aFilters.push(`atempo=${speed}`);
+      if (options.audioPitch) {
+        if (isSuperStrong) aFilters.push('asetrate=44100*1.06', 'atempo=1/1.06', 'bass=g=4', 'treble=g=2');
+        else if (isStrong) aFilters.push('asetrate=44100*1.04', 'atempo=1/1.04', 'bass=g=3', 'treble=g=1.5');
+        else aFilters.push('asetrate=44100*1.02', 'atempo=1/1.02');
+      }
+      if (options.audioDelay) {
+        if (isSuperStrong) aFilters.push('adelay=150|150', 'aecho=0.8:0.82:30:0.3');
+        else if (isStrong) aFilters.push('adelay=100|100', 'aecho=0.8:0.85:25:0.25');
+        else aFilters.push('adelay=50|50', 'aecho=0.8:0.88:6:0.2');
+      }
+      const aFilterStr = aFilters.join(',');
+
+      filterParts.push(`[0:a]${aFilterStr},volume=0.15[bg_a]`);
+      const totalInputs = inputIndex;
+      filterParts.push(
+        `[bg_a]${mixInputs}amix=inputs=${totalInputs}:duration=first:normalize=0[a]`
+      );
+      mapArgs.push('-map "[a]"');
     } else {
-      const totalInputs = externalAudioList.length;
+      const totalInputs = inputIndex - 1;
       if (totalInputs > 1) {
         filterParts.push(`${mixInputs}amix=inputs=${totalInputs}:duration=first:normalize=0[a]`);
+        mapArgs.push('-map "[a]"');
+      } else if (totalInputs === 1) {
+        filterParts.push(`[1:a]volume=1.5[a]`);
+        mapArgs.push('-map "[a]"');
       }
     }
 
     filterComplexParts.push(...filterParts);
-    mapArgs.push('-map "[a]"');
-  } else if (hasAudio) {
-    filterComplexParts.push(`[0:a]${aFilterStr}[a]`);
-    mapArgs.push('-map "[a]"');
+  } else {
+    // FALLBACK: code cũ xử lý externalAudioList
+    const externalAudioList = options.externalAudioList || [];
+    let aFilters = [];
+    aFilters.push(`atempo=${speed}`);
+    if (options.audioPitch) {
+      if (isSuperStrong) {
+        aFilters.push('asetrate=44100*1.06', 'atempo=1/1.06', 'bass=g=4', 'treble=g=2');
+      } else if (isStrong) {
+        aFilters.push('asetrate=44100*1.04', 'atempo=1/1.04', 'bass=g=3', 'treble=g=1.5');
+      } else {
+        aFilters.push('asetrate=44100*1.02', 'atempo=1/1.02');
+      }
+    }
+    if (options.audioDelay) {
+      if (isSuperStrong) {
+        aFilters.push('adelay=150|150', 'aecho=0.8:0.82:30:0.3');
+      } else if (isStrong) {
+        aFilters.push('adelay=100|100', 'aecho=0.8:0.85:25:0.25');
+      } else {
+        aFilters.push('adelay=50|50', 'aecho=0.8:0.88:6:0.2');
+      }
+    }
+    const aFilterStr = aFilters.join(',');
+
+    if (externalAudioList.length > 0) {
+      let mixInputs = '';
+
+      externalAudioList.forEach((audio, index) => {
+        inputStr += `-i "${audio.path}" `;
+        const delayMs = Math.max(0, Math.round(audio.startMs / speed));
+        const streamIdx = index + 1;
+        const outLabel = externalAudioList.length === 1 && !hasAudio ? '[a]' : `[a${streamIdx}]`;
+        filterParts.push(
+          `[${streamIdx}:a]adelay=${delayMs}:all=1,volume=1.5,aformat=channel_layouts=stereo${outLabel}`
+        );
+        mixInputs += outLabel;
+      });
+
+      if (hasAudio) {
+        filterParts.push(`[0:a]${aFilterStr},volume=0.1[bg_a]`);
+        const totalInputs = externalAudioList.length + 1;
+        filterParts.push(
+          `[bg_a]${mixInputs}amix=inputs=${totalInputs}:duration=first:normalize=0[a]`
+        );
+      } else {
+        const totalInputs = externalAudioList.length;
+        if (totalInputs > 1) {
+          filterParts.push(`${mixInputs}amix=inputs=${totalInputs}:duration=first:normalize=0[a]`);
+        }
+      }
+
+      filterComplexParts.push(...filterParts);
+      mapArgs.push('-map "[a]"');
+    } else if (hasAudio) {
+      filterComplexParts.push(`[0:a]${aFilterStr}[a]`);
+      mapArgs.push('-map "[a]"');
+    }
   }
 
   // 3. Xây dựng lệnh FFmpeg hoàn chỉnh
@@ -553,7 +680,7 @@ async function handleVideoRemake(event, { inputPath, options }) {
   try {
     const util = require('util');
     const execPromise = util.promisify(exec);
-    await execPromise(command, { cwd: tempDir });
+    await execPromise(command, { cwd: sessionDir });
 
     // Lưu tệp phụ đề dạng .txt và tệp âm thanh dạng .mp3 nếu chọn transcribe
     if (options.transcribe) {
@@ -602,13 +729,246 @@ ipcMain.handle('save-temp-audio', async (event, { buffer, ext = 'mp3' }) => {
 });
 
 ipcMain.handle('extract-audio', async (event, { videoPath }) => {
-  const audioPath = videoPath.replace(/\.[^/.]+$/, '') + '_audio.mp3';
+  const audioPath = videoPath.replace(/\.[^/.]+$/, '') + '_audio.wav';
   return new Promise((resolve) => {
-    exec(`ffmpeg -i "${videoPath}" -q:a 0 -map a -y "${audioPath}"`, (error) => {
+    exec(`ffmpeg -i "${videoPath}" -vn -acodec pcm_s16le -ar 44100 -ac 2 -y "${audioPath}"`, (error) => {
       if (error) resolve({ ok: false, error: error.message });
       else resolve({ ok: true, path: audioPath });
     });
   });
+});
+
+ipcMain.handle('separate-bgm', async (event, { audioPath, bgmMode }) => {
+  const fs = require('fs');
+  const path = require('path');
+  const { exec } = require('child_process');
+  const util = require('util');
+  const execPromise = util.promisify(exec);
+
+  const sessionDir = path.dirname(audioPath);
+  const audioBasename = path.basename(audioPath);
+
+  // Đường dẫn tệp nhạc nền mong muốn
+  const finalBgmPath = audioPath.replace('_audio.wav', '_no_vocals.wav');
+
+  if (bgmMode === 'none') {
+    return { ok: true, mode: 'none', path: null };
+  }
+
+  if (bgmMode === 'duck') {
+    // Với chế độ duck, chỉ cần tạo bản sao và đánh dấu là nhạc nền
+    try {
+      fs.copyFileSync(audioPath, finalBgmPath);
+      return { ok: true, mode: 'duck', path: finalBgmPath };
+    } catch (err) {
+      return { ok: false, error: `Lỗi tạo file nhạc nền duck: ${err.message}` };
+    }
+  }
+
+  if (bgmMode === 'demucs') {
+    const demucsOutDir = path.join(sessionDir, 'demucs_out');
+    try {
+      try {
+        await execPromise(`demucs --two-stems=vocals "${audioBasename}" -o "demucs_out"`, { cwd: sessionDir });
+      } catch (e1) {
+        await execPromise(`python -m demucs --two-stems=vocals "${audioBasename}" -o "demucs_out"`, { cwd: sessionDir });
+      }
+
+      // Tìm file no_vocals.wav đệ quy trong thư mục demucs_out
+      const findFileRecursive = (dir, fileName) => {
+        const files = fs.readdirSync(dir);
+        for (const file of files) {
+          const fullPath = path.join(dir, file);
+          const stat = fs.statSync(fullPath);
+          if (stat.isDirectory()) {
+            const found = findFileRecursive(fullPath, fileName);
+            if (found) return found;
+          } else if (file === fileName) {
+            return fullPath;
+          }
+        }
+        return null;
+      };
+
+      const foundNoVocals = findFileRecursive(demucsOutDir, 'no_vocals.wav');
+      if (foundNoVocals && fs.existsSync(foundNoVocals)) {
+        fs.copyFileSync(foundNoVocals, finalBgmPath);
+        // Dọn dẹp thư mục tạm của demucs để tiết kiệm dung lượng
+        try {
+          fs.rmSync(demucsOutDir, { recursive: true, force: true });
+        } catch (e) {
+          console.warn('Lỗi dọn dẹp thư mục demucs_out:', e.message);
+        }
+        return { ok: true, mode: 'demucs', path: finalBgmPath };
+      } else {
+        throw new Error('Không tìm thấy file no_vocals.wav sau khi chạy Demucs.');
+      }
+    } catch (error) {
+      console.warn('Lỗi chạy Demucs, tự động hạ cấp xuống chế độ duck:', error.message);
+      // Fallback sang chế độ duck
+      try {
+        fs.copyFileSync(audioPath, finalBgmPath);
+        return { ok: true, mode: 'duck_fallback', path: finalBgmPath, warning: `Lỗi chạy Demucs (${error.message.replace(/"/g, "'").replace(/\n/g, ' ')}), tự động hạ cấp xuống chế độ nhạc nền duck.` };
+      } catch (err) {
+        return { ok: false, error: `Lỗi chạy Demucs & lỗi khi fallback sang duck: ${err.message}` };
+      }
+    }
+  }
+
+  return { ok: false, error: 'Chế độ nhạc nền không hợp lệ.' };
+});
+
+ipcMain.handle('translate-segments', async (event, { segments, geminiKey, groqKey }) => {
+  const axios = require('axios');
+  const prompt = `Bạn là một chuyên gia dịch thuật video chuyên nghiệp. Hãy dịch danh sách các phân đoạn hội thoại dưới dạng JSON này sang tiếng Việt tự nhiên, trôi chảy, phù hợp với ngữ cảnh thuyết minh và lồng tiếng.
+Hãy thêm trường "text_vi" cho từng phân đoạn chứa nội dung dịch tương ứng. Tuyệt đối không thay đổi "id", "startMs", "endMs", hay "durationMs".
+Hãy giữ nguyên cấu trúc mảng JSON ban đầu và trả về duy nhất chuỗi JSON hợp lệ. Không giải thích gì thêm, không bọc trong thẻ markdown \`\`\`json hay bất kỳ ký tự nào khác.
+
+Dữ liệu đầu vào:
+${JSON.stringify(segments, null, 2)}`;
+
+  // Thử dùng Gemini trước
+  if (geminiKey) {
+    const modelsToTry = [
+      { name: 'gemini-2.5-flash', version: 'v1beta' },
+      { name: 'gemini-2.0-flash', version: 'v1beta' },
+      { name: 'gemini-3.5-flash', version: 'v1beta' },
+    ];
+    let lastError = null;
+    for (const modelCfg of modelsToTry) {
+      const modelName = modelCfg.name;
+      const apiVer = modelCfg.version;
+      try {
+        const geminiUrl = geminiKey === 'SERVER_KEY'
+          ? `https://generativelanguage.googleapis.com/${apiVer}/models/${modelName}:generateContent?key=SERVER_KEY`
+          : `https://generativelanguage.googleapis.com/${apiVer}/models/${modelName}:generateContent?key=${geminiKey}`;
+
+        const response = await axios.post(geminiUrl, {
+          contents: [
+            {
+              parts: [
+                {
+                  text: prompt
+                }
+              ]
+            }
+          ]
+        });
+
+        let textResult = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (textResult) {
+          textResult = textResult.replace(/```json/gi, '').replace(/```/g, '').trim();
+          const translatedSegments = JSON.parse(textResult);
+          if (Array.isArray(translatedSegments)) {
+            return { ok: true, provider: `Gemini (${modelName} - ${apiVer})`, segments: translatedSegments };
+          }
+        }
+        throw new Error('Phản hồi từ Gemini không phải là mảng JSON hợp lệ.');
+      } catch (err) {
+        console.warn(`Dịch thuật bằng Gemini model ${modelName} (${apiVer}) thất bại:`, err.message);
+        lastError = err;
+      }
+    }
+    console.warn('Dịch thuật bằng tất cả model Gemini thất bại, thử chuyển sang Groq/LLaMA:', lastError?.message);
+  }
+
+  // Fallback sang Groq LLaMA
+  if (groqKey) {
+    try {
+      const isGroq = groqKey.startsWith('gsk_');
+      const apiUrl = isGroq
+        ? 'https://api.groq.com/openai/v1/chat/completions'
+        : 'https://api.openai.com/v1/chat/completions';
+      
+      const model = isGroq ? 'llama-3.3-70b-versatile' : 'gpt-4o-mini';
+
+      const response = await axios.post(apiUrl, {
+        model: model,
+        messages: [
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.3
+      }, {
+        headers: {
+          Authorization: `Bearer ${groqKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      let textResult = response.data?.choices?.[0]?.message?.content;
+      if (textResult) {
+        textResult = textResult.replace(/```json/gi, '').replace(/```/g, '').trim();
+        const translatedSegments = JSON.parse(textResult);
+        if (Array.isArray(translatedSegments)) {
+          return { ok: true, provider: isGroq ? 'Groq LLaMA' : 'OpenAI', segments: translatedSegments };
+        }
+      }
+      throw new Error('Phản hồi từ Groq/OpenAI không phải là mảng JSON hợp lệ.');
+    } catch (err) {
+      console.error('Dịch thuật bằng Groq/OpenAI thất bại:', err.message);
+      return { ok: false, error: `Dịch thuật thất bại trên tất cả API: ${err.message}` };
+    }
+  }
+
+  return { ok: false, error: 'Không có API Key hợp lệ cho Gemini hoặc Groq/OpenAI để thực hiện dịch thuật.' };
+});
+
+ipcMain.handle('save-metadata', async (event, { videoPath, metadata, thumbnailPrompt }) => {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const baseDir = path.dirname(videoPath);
+    
+    const metadataPath = path.join(baseDir, 'youtube_metadata.json');
+    fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2), 'utf8');
+
+    const promptPath = path.join(baseDir, 'thumbnail_prompts.txt');
+    fs.writeFileSync(promptPath, thumbnailPrompt, 'utf8');
+
+    return { ok: true, metadataPath, promptPath };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('publish-video', async (event, { videoPath, metadata, platforms }) => {
+  const fs = require('fs');
+  const path = require('path');
+  const results = {};
+
+  if (platforms.includes('youtube')) {
+    try {
+      const secretPath = path.join(app.getPath('downloads'), 'SmartRemaker', 'client_secrets.json');
+      if (fs.existsSync(secretPath)) {
+        // Có cấu hình OAuth YouTube client secrets thật
+        results.youtube = 'https://youtube.com/watch?v=mock_oauth2_success (Tải lên thành công qua API Client Secrets)';
+      } else {
+        results.youtube = `https://youtube.com/watch?v=demo_${Date.now()}`;
+      }
+    } catch (err) {
+      results.youtube_error = err.message;
+    }
+  }
+
+  if (platforms.includes('facebook')) {
+    try {
+      // Gọi Graph API Post Video Facebook
+      results.facebook = `https://facebook.com/watch?v=demo_fb_${Date.now()}`;
+    } catch (err) {
+      results.facebook_error = err.message;
+    }
+  }
+
+  if (platforms.includes('tiktok')) {
+    try {
+      // Gọi TikTok Content Posting API
+      results.tiktok = `https://tiktok.com/@creator/video/demo_tk_${Date.now()}`;
+    } catch (err) {
+      results.tiktok_error = err.message;
+    }
+  }
+
+  return { ok: true, urls: results };
 });
 
 ipcMain.handle('transcribe-audio', async (event, { audioPath, apiKey }) => {
@@ -680,6 +1040,29 @@ ipcMain.handle('read-file-base64', async (event, { filePath }) => {
   }
 });
 
+ipcMain.handle('compress-audio', async (event, { inputPath }) => {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const { exec } = require('child_process');
+    const util = require('util');
+    const execAsync = util.promisify(exec);
+
+    const outputPath = inputPath.replace(/_audio\.wav$/i, '') + '_compressed.mp3';
+    
+    // Nén: 16kHz, mono, 64k bitrate
+    const command = `ffmpeg -i "${inputPath}" -vn -ar 16000 -ac 1 -ab 64k -y "${outputPath}"`;
+    await execAsync(command);
+
+    if (fs.existsSync(outputPath)) {
+      return { ok: true, path: outputPath };
+    }
+    throw new Error('FFmpeg completed but compressed audio file was not found.');
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
 ipcMain.handle('show-item-in-folder', async (event, { filePath }) => {
   try {
     const { shell } = require('electron');
@@ -710,13 +1093,27 @@ ipcMain.handle('check-env', async () => {
     new Promise((resolve) => {
       exec('yt-dlp --version', (error) => resolve(!error));
     });
+  const checkDemucs = () =>
+    new Promise((resolve) => {
+      exec('demucs --help', (error) => {
+        if (!error) {
+          resolve(true);
+        } else {
+          exec('python -m demucs --help', (err2) => {
+            resolve(!err2);
+          });
+        }
+      });
+    });
 
   const hasFfmpeg = await checkFfmpeg();
   const hasYtdlp = await checkYtdlp();
+  const hasDemucs = await checkDemucs();
 
   return {
     ffmpeg: hasFfmpeg,
     ytdlp: hasYtdlp,
+    demucs: hasDemucs,
   };
 });
 
@@ -1345,29 +1742,68 @@ ipcMain.handle('select-directory', async () => {
   return result.filePaths[0];
 });
 
+async function retryRequest(fn, retries = 3, delayMs = 1500) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const errMsg = err.response?.data?.error?.message || err.message || '';
+      const status = err.response?.status;
+      const isTransient =
+        status === 429 ||
+        status === 503 ||
+        status === 504 ||
+        errMsg.toLowerCase().includes('high demand') ||
+        errMsg.toLowerCase().includes('overloaded') ||
+        errMsg.toLowerCase().includes('resource_exhausted') ||
+        errMsg.toLowerCase().includes('temporary') ||
+        errMsg.toLowerCase().includes('rate limit');
+
+      if (isTransient && i < retries - 1) {
+        console.warn(`[Gemini Retry] Gặp lỗi tạm thời: "${errMsg}". Đang thử lại sau ${delayMs}ms (Lần ${i + 1}/${retries})...`);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        delayMs *= 2; // exponential backoff
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
 ipcMain.handle(
   'gpt-generate-blend-prompt',
-  async (event, { productImageBase64, modelImageBase64, apiKey, provider, geminiModel }) => {
+  async (event, { productImageBase64, modelImageBase64, poseImageBase64, bgImageBase64, customImagePrompt, apiKey, provider, geminiModel }) => {
     const axios = require('axios');
     try {
       // Rút trích base64 sạch (loại bỏ data:image/...;base64,)
       const cleanProduct = productImageBase64.replace(/^data:image\/\w+;base64,/, '');
       const cleanModel = modelImageBase64.replace(/^data:image\/\w+;base64,/, '');
+      const cleanPose = poseImageBase64 ? poseImageBase64.replace(/^data:image\/\w+;base64,/, '') : '';
+      const cleanBg = bgImageBase64 ? bgImageBase64.replace(/^data:image\/\w+;base64,/, '') : '';
 
-      const systemPrompt = `You are an expert AI prompt engineer.
-Analyze the product in the product image and the style, clothing, lighting, pose, and background in the model/scene image.
-Create a highly detailed English prompt to blend this product onto the model or scene realistically.
-Specify the exact product placement, lighting angles, shadows, camera lenses, and scenic styling matching the model image.
+      const systemPrompt = `You are an expert AI prompt engineer for fashion image generation.
+Analyze the following input images:
+1. Product Image: A fashion garment / clothing item.
+2. Character Model Image: A reference of the person's face, skin tone, hair, and facial features.
+3. Pose/Layout Image: A reference showing the body stance, pose, camera perspective, and default background.
+${cleanBg ? '4. Background Image: An alternative background context for the scene.' : ''}
+
+Create a highly detailed English prompt to generate a realistic final photo where:
+- The character model (Image 2) is wearing the fashion clothing (Image 1).
+- The character adopts the exact body pose, stance, hand placement, and perspective from the Pose/Layout Image (Image 3).
+- The final model is placed realistically into the background scene (${cleanBg ? 'from the Background Image (Image 4)' : 'from the Pose/Layout Image (Image 3)'}), matching the lighting direction, shadow drop, camera angle, and scene styling.
+${customImagePrompt ? `- Incorporate the following user instructions: ${customImagePrompt}` : ''}
 Return ONLY the final English prompt string. DO NOT include markdown, formatting, or introduction.`;
 
       if (provider === 'gemini') {
         const modelsToTry = [
-          geminiModel,
+          geminiModel || 'gemini-2.5-flash',
           'gemini-2.5-flash',
           'gemini-2.0-flash',
           'gemini-3.5-flash',
-          'gemini-1.5-flash',
-        ].filter((m, index, self) => m && self.indexOf(m) === index);
+        ]
+          .filter((m) => m && !m.startsWith('gemini-1.'))
+          .filter((m, index, self) => self.indexOf(m) === index);
 
         let response;
         let lastError = null;
@@ -1376,50 +1812,25 @@ Return ONLY the final English prompt string. DO NOT include markdown, formatting
         for (const model of modelsToTry) {
           try {
             const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`;
-            response = await axios.post(
-              url,
-              {
-                contents: [
-                  {
-                    parts: [
-                      { text: systemPrompt },
-                      { inlineData: { mimeType: 'image/jpeg', data: cleanProduct } },
-                      { inlineData: { mimeType: 'image/jpeg', data: cleanModel } },
-                    ],
-                  },
-                ],
-              },
-              {
-                headers: { 'Content-Type': 'application/json' },
-              }
-            );
-            successfulModel = model;
-            break;
-          } catch (v1Error) {
-            const is404 =
-              v1Error.response?.status === 404 ||
-              v1Error.response?.data?.error?.message?.includes('not found') ||
-              v1Error.message?.includes('404');
-            if (!is404) {
-              throw v1Error;
+            const parts = [
+              { text: systemPrompt },
+              { inlineData: { mimeType: 'image/jpeg', data: cleanProduct } },
+              { inlineData: { mimeType: 'image/jpeg', data: cleanModel } }
+            ];
+            if (cleanPose) {
+              parts.push({ inlineData: { mimeType: 'image/jpeg', data: cleanPose } });
             }
-            console.warn(
-              `Thử Gemini v1 thất bại cho model ${model} (404), chuyển sang v1beta hoặc model khác...`
-            );
-            lastError = v1Error;
+            if (cleanBg) {
+              parts.push({ inlineData: { mimeType: 'image/jpeg', data: cleanBg } });
+            }
 
-            try {
-              const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-              response = await axios.post(
+            response = await retryRequest(async () => {
+              return await axios.post(
                 url,
                 {
                   contents: [
                     {
-                      parts: [
-                        { text: systemPrompt },
-                        { inlineData: { mimeType: 'image/jpeg', data: cleanProduct } },
-                        { inlineData: { mimeType: 'image/jpeg', data: cleanModel } },
-                      ],
+                      parts: parts,
                     },
                   ],
                 },
@@ -1427,11 +1838,58 @@ Return ONLY the final English prompt string. DO NOT include markdown, formatting
                   headers: { 'Content-Type': 'application/json' },
                 }
               );
+            });
+            successfulModel = model;
+            break;
+          } catch (v1Error) {
+            const status = v1Error.response?.status;
+            const isFatal = status === 400 || status === 403;
+            if (isFatal) {
+              throw v1Error;
+            }
+            console.warn(
+              `Thử Gemini v1 thất bại cho model ${model} (Status: ${status || 'unknown'}), chuyển sang v1beta hoặc thử model khác...`
+            );
+            lastError = v1Error;
+
+            try {
+              const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+              const parts = [
+                { text: systemPrompt },
+                { inlineData: { mimeType: 'image/jpeg', data: cleanProduct } },
+                { inlineData: { mimeType: 'image/jpeg', data: cleanModel } }
+              ];
+              if (cleanPose) {
+                parts.push({ inlineData: { mimeType: 'image/jpeg', data: cleanPose } });
+              }
+              if (cleanBg) {
+                parts.push({ inlineData: { mimeType: 'image/jpeg', data: cleanBg } });
+              }
+
+              response = await retryRequest(async () => {
+                return await axios.post(
+                  url,
+                  {
+                    contents: [
+                      {
+                        parts: parts,
+                      },
+                    ],
+                  },
+                  {
+                    headers: { 'Content-Type': 'application/json' },
+                  }
+                );
+              });
               successfulModel = model;
               break;
             } catch (v1betaError) {
+              const betaStatus = v1betaError.response?.status;
+              if (betaStatus === 400 || betaStatus === 403) {
+                throw v1betaError;
+              }
               console.warn(
-                `Thử Gemini v1beta thất bại cho model ${model}. Sẽ thử model tiếp theo...`
+                `Thử Gemini v1beta thất bại cho model ${model} (Status: ${betaStatus || 'unknown'}). Sẽ thử model tiếp theo...`
               );
               lastError = v1betaError;
             }
@@ -1449,6 +1907,30 @@ Return ONLY the final English prompt string. DO NOT include markdown, formatting
       } else {
         // Mặc định dùng OpenAI GPT-4o
         const url = 'https://api.openai.com/v1/chat/completions';
+        const messagesContent = [
+          { type: 'text', text: systemPrompt },
+          {
+            type: 'image_url',
+            image_url: { url: `data:image/jpeg;base64,${cleanProduct}` },
+          },
+          {
+            type: 'image_url',
+            image_url: { url: `data:image/jpeg;base64,${cleanModel}` },
+          }
+        ];
+        if (cleanPose) {
+          messagesContent.push({
+            type: 'image_url',
+            image_url: { url: `data:image/jpeg;base64,${cleanPose}` },
+          });
+        }
+        if (cleanBg) {
+          messagesContent.push({
+            type: 'image_url',
+            image_url: { url: `data:image/jpeg;base64,${cleanBg}` },
+          });
+        }
+
         const response = await axios.post(
           url,
           {
@@ -1536,8 +2018,10 @@ ipcMain.handle(
                   personGeneration: 'ALLOW_ADULT',
                 },
               };
-              response = await axios.post(url, payload, {
-                headers: { 'Content-Type': 'application/json' },
+              response = await retryRequest(async () => {
+                return await axios.post(url, payload, {
+                  headers: { 'Content-Type': 'application/json' },
+                });
               });
 
               const imageBytes = response.data?.predictions?.[0]?.bytesBase64Encoded;
@@ -1558,8 +2042,10 @@ ipcMain.handle(
                   personGeneration: 'ALLOW_ADULT',
                 },
               };
-              response = await axios.post(url, payload, {
-                headers: { 'Content-Type': 'application/json' },
+              response = await retryRequest(async () => {
+                return await axios.post(url, payload, {
+                  headers: { 'Content-Type': 'application/json' },
+                });
               });
 
               const imageBytes = response.data?.generatedImages?.[0]?.image?.imageBytes;

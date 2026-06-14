@@ -292,6 +292,70 @@ class TTSProvider {
     if (current) chunks.push(current.trim());
     return chunks;
   }
+
+  /**
+   * Vivibe TTS
+   */
+  static async speakWithVivibe(text, voice, apiKey) {
+    if (!apiKey) throw new Error('Vui lòng cấu hình API Key Vivibe.');
+    try {
+      const url = 'https://api.vivibe.vn/v1/tts';
+      const payload = { text, voice: voice || 'vi-VN-Standard-A' };
+      
+      if (window.electron && window.electron.ttsRequest) {
+        const result = await window.electron.ttsRequest(url, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+        if (!result.ok) throw new Error(result.error || 'Vivibe TTS failed');
+        return new Blob([result.data], { type: 'audio/mpeg' });
+      } else {
+        const response = await axios.post(url, payload, {
+          headers: { 'Authorization': `Bearer ${apiKey}` },
+          responseType: 'blob'
+        });
+        return response.data;
+      }
+    } catch (error) {
+      throw new Error(`Vivibe Error: ${error.message}`);
+    }
+  }
+
+  /**
+   * LucyLab TTS
+   */
+  static async speakWithLucyLab(text, voice, apiKey) {
+    if (!apiKey) throw new Error('Vui lòng cấu hình API Key LucyLab.');
+    try {
+      const url = 'https://api.lucylab.ai/v1/tts';
+      const payload = { text, voice: voice || 'lucy' };
+      
+      if (window.electron && window.electron.ttsRequest) {
+        const result = await window.electron.ttsRequest(url, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+        if (!result.ok) throw new Error(result.error || 'LucyLab TTS failed');
+        return new Blob([result.data], { type: 'audio/mpeg' });
+      } else {
+        const response = await axios.post(url, payload, {
+          headers: { 'Authorization': `Bearer ${apiKey}` },
+          responseType: 'blob'
+        });
+        return response.data;
+      }
+    } catch (error) {
+      throw new Error(`LucyLab Error: ${error.message}`);
+    }
+  }
 }
 
 export default TTSProvider;

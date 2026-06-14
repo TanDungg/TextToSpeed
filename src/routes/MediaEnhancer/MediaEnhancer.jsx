@@ -56,6 +56,16 @@ const MediaEnhancer = () => {
   return (
     <div className="tool-container media-enhancer-container">
       <Card variant="borderless" className="tool-card">
+        {loading && (
+          <div className="tool-card-overlay">
+            <div className="premium-spinner" />
+            <div className="tool-card-overlay-text">Đang tiến hành làm nét tệp tin...</div>
+            <div className="tool-card-overlay-subtext">Hệ thống đang xử lý qua nhân xử lý Real-ESRGAN GPU. Tiến trình kết xuất sẽ chạy cho đến khi đạt 100%.</div>
+            <div className="overlay-progress-container">
+              <Progress percent={percent} strokeColor="#0d9488" />
+            </div>
+          </div>
+        )}
         <header className="tool-header">
           <h1 className="tool-gradient-title">AI Media Enhancer</h1>
           <div className="tool-status-bar">

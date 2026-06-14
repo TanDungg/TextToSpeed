@@ -552,6 +552,26 @@ const VideoSubExtractor = () => {
   return (
     <div className="tool-container video-sub-extractor-container">
       <Card variant="borderless" className="tool-card">
+        {isScanning && (
+          <div className="tool-card-overlay">
+            <div className="premium-spinner" />
+            <div className="tool-card-overlay-text">AI đang trích xuất phụ đề video...</div>
+            <div className="tool-card-overlay-subtext">
+              Hệ thống đang tiến hành quét Tesseract OCR nội bộ trên từng khung hình. Bạn có thể dừng tiến trình bất cứ lúc nào.
+            </div>
+            <div className="overlay-progress-container">
+              <Progress percent={progressPercent} strokeColor="#0d9488" />
+            </div>
+            <Button
+              type="primary"
+              danger
+              onClick={handleStopExtraction}
+              className="overlay-cancel-btn"
+            >
+              HỦY QUÉT PHỤ ĐỀ
+            </Button>
+          </div>
+        )}
         <header className="tool-header">
           <h1 className="tool-gradient-title">AI Video Subtitle OCR</h1>
           <div className="tool-status-bar">

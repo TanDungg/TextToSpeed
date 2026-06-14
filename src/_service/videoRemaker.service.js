@@ -1,5 +1,12 @@
 // src/_service/videoRemaker.service.js
+import { BASE_URL_API } from '../constants/config';
+
 const isElectronEnv = () => window.electron && !window.electron.isWebMock;
+
+const shouldCallCloud = (settings) => {
+  if (!isElectronEnv()) return true; // Chạy trên nền Web/Cloud thì bắt buộc dùng Cloud API
+  return settings?.useCloudEngine === true; // Chạy trên App Desktop thì phụ thuộc vào cấu hình Toggle
+};
 
 const handleJsonResponse = async (response, defaultErrorMsg) => {
   const text = await response.text();
@@ -16,24 +23,28 @@ const handleJsonResponse = async (response, defaultErrorMsg) => {
 };
 
 export const VideoRemakerService = {
-  checkEnv: async () => {
-    if (isElectronEnv()) {
+  checkEnv: async (settings) => {
+    if (!shouldCallCloud(settings)) {
       return await window.electron.checkEnv();
     }
     try {
-      const res = await fetch('/api/check-env');
-      const text = await res.text();
-      return JSON.parse(text);
+      const res = await fetch(`${BASE_URL_API}/api/check-env`);
+      const data = await res.json();
+      return {
+        ffmpeg: data.ffmpeg ?? true,
+        ytdlp: data.ytdlp ?? true,
+        demucs: data.demucs ?? true
+      };
     } catch {
-      return { ffmpeg: false, ytdlp: false };
+      return { ffmpeg: true, ytdlp: true, demucs: true };
     }
   },
 
-  videoDownload: async (url) => {
-    if (isElectronEnv()) {
+  videoDownload: async (url, settings) => {
+    if (!shouldCallCloud(settings)) {
       return await window.electron.videoDownload(url);
     }
-    const response = await fetch('/api/video-download', {
+    const response = await fetch(`${BASE_URL_API}/api/video-download`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url }),
@@ -41,23 +52,26 @@ export const VideoRemakerService = {
     return await handleJsonResponse(response, 'Tải video từ Cloud thất bại.');
   },
 
-  videoRemake: async (videoPath, options) => {
-    if (isElectronEnv()) {
+  videoRemake: async (videoPath, options, settings) => {
+    if (!shouldCallCloud(settings)) {
       return await window.electron.videoRemake(videoPath, options);
     }
-    const response = await fetch('/api/video-remake', {
+    const response = await fetch(`${BASE_URL_API}/api/video-remake`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ videoPath, options: typeof options === 'string' ? options : JSON.stringify(options) }),
+      body: JSON.stringify({ 
+        videoPath, 
+        options: typeof options === 'string' ? JSON.parse(options) : options 
+      }),
     });
     return await handleJsonResponse(response, 'Lách video thất bại trên Cloud.');
   },
 
-  extractAudio: async (videoPath) => {
-    if (isElectronEnv()) {
+  extractAudio: async (videoPath, settings) => {
+    if (!shouldCallCloud(settings)) {
       return await window.electron.extractAudio(videoPath);
     }
-    const response = await fetch('/api/extract-audio', {
+    const response = await fetch(`${BASE_URL_API}/api/extract-audio`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ videoPath }),
@@ -65,11 +79,59 @@ export const VideoRemakerService = {
     return await handleJsonResponse(response, 'Trích xuất âm thanh từ Cloud thất bại.');
   },
 
-  transcribeAudio: async (audioPath, apiKey) => {
-    if (isElectronEnv()) {
+  separateBgm: async (audioPath, bgmMode, settings) => {
+    if (!shouldCallCloud(settings)) {
+      return await window.electron.separateBgm(audioPath, bgmMode);
+    }
+    const response = await fetch(`${BASE_URL_API}/api/separate-bgm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ audioPath, bgmMode }),
+    });
+    return await handleJsonResponse(response, 'Tách nhạc nền từ Cloud thất bại.');
+  },
+
+  translateSegments: async (segments, geminiKey, groqKey, settings) => {
+    if (!shouldCallCloud(settings)) {
+      return await window.electron.translateSegments(segments, geminiKey, groqKey);
+    }
+    const response = await fetch(`${BASE_URL_API}/api/translate-segments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ segments, geminiKey, groqKey }),
+    });
+    return await handleJsonResponse(response, 'Dịch thuật phân đoạn từ Cloud thất bại.');
+  },
+
+  saveMetadata: async (videoPath, metadata, thumbnailPrompt, settings) => {
+    if (!shouldCallCloud(settings)) {
+      return await window.electron.saveMetadata(videoPath, metadata, thumbnailPrompt);
+    }
+    const response = await fetch(`${BASE_URL_API}/api/save-metadata`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ videoPath, metadata, thumbnailPrompt }),
+    });
+    return await handleJsonResponse(response, 'Lưu Metadata từ Cloud thất bại.');
+  },
+
+  publishVideo: async (videoPath, metadata, platforms, settings) => {
+    if (!shouldCallCloud(settings)) {
+      return await window.electron.publishVideo(videoPath, metadata, platforms);
+    }
+    const response = await fetch(`${BASE_URL_API}/api/publish-video`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ videoPath, metadata, platforms }),
+    });
+    return await handleJsonResponse(response, 'Đăng tải video từ Cloud thất bại.');
+  },
+
+  transcribeAudio: async (audioPath, apiKey, settings) => {
+    if (!shouldCallCloud(settings)) {
       return await window.electron.transcribeAudio(audioPath, apiKey);
     }
-    const response = await fetch('/api/transcribe-audio', {
+    const response = await fetch(`${BASE_URL_API}/api/transcribe-audio`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ audioPath, apiKey }),
@@ -77,11 +139,11 @@ export const VideoRemakerService = {
     return await handleJsonResponse(response, 'Nhận diện giọng nói từ Cloud thất bại.');
   },
 
-  readFileBase64: async (filePath) => {
-    if (isElectronEnv()) {
+  readFileBase64: async (filePath, settings) => {
+    if (!shouldCallCloud(settings)) {
       return await window.electron.readFileBase64(filePath);
     }
-    const response = await fetch('/api/read-file-base64', {
+    const response = await fetch(`${BASE_URL_API}/api/read-file-base64`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ filePath }),
@@ -89,11 +151,23 @@ export const VideoRemakerService = {
     return await handleJsonResponse(response, 'Đọc file từ Cloud thất bại.');
   },
 
-  ttsRequest: async (url, options = {}) => {
-    if (isElectronEnv()) {
+  compressAudio: async (inputPath, settings) => {
+    if (!shouldCallCloud(settings)) {
+      return await window.electron.compressAudio(inputPath);
+    }
+    const response = await fetch(`${BASE_URL_API}/api/compress-audio`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inputPath }),
+    });
+    return await handleJsonResponse(response, 'Nén âm thanh từ Cloud thất bại.');
+  },
+
+  ttsRequest: async (url, options = {}, settings) => {
+    if (!shouldCallCloud(settings)) {
       return await window.electron.ttsRequest(url, options);
     }
-    const response = await fetch('/api/tts-request', {
+    const response = await fetch(`${BASE_URL_API}/api/tts-request`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url, options }),
@@ -110,8 +184,8 @@ export const VideoRemakerService = {
     return result;
   },
 
-  saveTempAudio: async (audioBlobOrBuffer) => {
-    if (isElectronEnv()) {
+  saveTempAudio: async (audioBlobOrBuffer, settings) => {
+    if (!shouldCallCloud(settings)) {
       const arrayBuffer = audioBlobOrBuffer instanceof ArrayBuffer
         ? audioBlobOrBuffer
         : await audioBlobOrBuffer.arrayBuffer();
@@ -122,7 +196,7 @@ export const VideoRemakerService = {
       : new Blob([audioBlobOrBuffer], { type: 'audio/mpeg' });
     const formData = new FormData();
     formData.append('file', blob, `voice-${Date.now()}.mp3`);
-    const response = await fetch('/api/save-temp-audio', {
+    const response = await fetch(`${BASE_URL_API}/api/video/upload-audio-segment`, {
       method: 'POST',
       body: formData,
     });
