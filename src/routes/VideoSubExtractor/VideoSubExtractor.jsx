@@ -34,6 +34,8 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import Tesseract from 'tesseract.js';
+import { BASE_URL_API } from '../../constants/config';
+import VideoRemakerService from '../../_service/videoRemaker.service';
 import './VideoSubExtractorStyles.scss';
 
 const { Title, Text } = Typography;
@@ -68,10 +70,80 @@ const getTextSimilarity = (str1, str2) => {
   return intersection.size / union.size;
 };
 
-const VideoSubExtractor = () => {
-  const [selectedFile, setSelectedFile] = useState(null); // { name, path, type, size }
+const parseSRT = (srtString) => {
+  if (!srtString) return [];
+  const blocks = srtString.split(/\r?\n\s*\r?\n/);
+  const result = [];
+
+  for (const block of blocks) {
+    const lines = block
+      .trim()
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (lines.length < 2) continue;
+
+    let timeLineIdx = -1;
+    let match = null;
+
+    for (let i = 0; i < lines.length; i++) {
+      const m = lines[i].match(
+        /(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})/
+      );
+      if (m) {
+        timeLineIdx = i;
+        match = m;
+        break;
+      }
+    }
+
+    if (match && timeLineIdx !== -1) {
+      const id = timeLineIdx > 0 ? lines[0] : (result.length + 1).toString();
+      const startMs =
+        parseInt(match[1]) * 3600000 +
+        parseInt(match[2]) * 60000 +
+        parseInt(match[3]) * 1000 +
+        parseInt(match[4]);
+      const endMs =
+        parseInt(match[5]) * 3600000 +
+        parseInt(match[6]) * 60000 +
+        parseInt(match[7]) * 1000 +
+        parseInt(match[8]);
+
+      const text = lines
+        .slice(timeLineIdx + 1)
+        .join(' ')
+        .trim();
+
+      const cleanText = text.replace(/[([{].*?[)\]}]/g, '').trim();
+
+      if (cleanText) {
+        result.push({
+          id: Date.now() + Math.random(),
+          index: result.length + 1,
+          startTime: startMs / 1000,
+          endTime: endMs / 1000,
+          text: cleanText,
+        });
+      }
+    }
+  }
+  return result;
+};
+
+const VideoSubExtractor = ({ settings }) => {
+  const [selectedFile, setSelectedFile] = useState(null); // { name, path, type, size, fileObject }
   const [videoUrl, setVideoUrl] = useState('');
   const [videoDuration, setVideoDuration] = useState(0);
+
+  // Mode: 'ocr' | 'stt'
+  const [extractMode, setExtractMode] = useState('ocr');
+  // STT engine: 'groq' | 'openai'
+  const [sttEngine, setSttEngine] = useState('groq');
+
+  // API keys
+  const activeOpenaiKey = settings?.openaiKey || (localStorage.getItem('tts_settings') ? JSON.parse(localStorage.getItem('tts_settings')).openaiKey : '') || '';
+  const activeGroqKey = settings?.groqKey || (localStorage.getItem('tts_settings') ? JSON.parse(localStorage.getItem('tts_settings')).groqKey : '') || '';
 
   // Scanning State
   const [isScanning, setIsScanning] = useState(false);
@@ -187,49 +259,76 @@ const VideoSubExtractor = () => {
   };
 
   const handleSelectVideo = async () => {
-    if (!window.electron || window.electron.isWebMock) {
-      message.error('Ứng dụng cần chạy trong Electron để duyệt file hệ thống.');
-      return;
-    }
+    const isElectron = window.electron && !window.electron.isWebMock;
 
-    try {
-      const res = await window.electron.selectFile('video');
-      if (res.canceled || !res.filePaths || res.filePaths.length === 0) {
-        return;
+    if (isElectron) {
+      try {
+        const res = await window.electron.selectFile('video');
+        if (res.canceled || !res.filePaths || res.filePaths.length === 0) {
+          return;
+        }
+
+        const filePath = res.filePaths[0];
+        const fileName = filePath.split(/[\\/]/).pop();
+        const extension = fileName.split('.').pop().toLowerCase();
+        
+        const isVid = ['mp4', 'mkv', 'avi', 'mov', 'webm'].includes(extension);
+
+        if (!isVid) {
+          message.error('Chỉ hỗ trợ định dạng video (MP4, MKV, AVI, MOV, WEBM).');
+          return;
+        }
+
+        setSelectedFile({
+          name: fileName,
+          path: filePath,
+          extension: extension,
+        });
+
+        // Stream local media via media:// custom protocol
+        const streamUrl = `media://${filePath.replace(/\\/g, '/')}`;
+        setVideoUrl(streamUrl);
+        
+        // Reset scanning states
+        setSubtitles([]);
+        setProgressPercent(0);
+        setLogs([]);
+        setEta(null);
+        setCurrentScanTime(0);
+
+        addLog(`Đã tải video: ${fileName}`, 'success');
+        message.success('Tải video thành công!');
+      } catch (error) {
+        message.error('Không thể chọn video: ' + error.message);
       }
+    } else {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'video/*';
+      input.onchange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          const extension = file.name.split('.').pop().toLowerCase();
+          setSelectedFile({
+            name: file.name,
+            path: '',
+            extension: extension,
+            fileObject: file,
+          });
+          setVideoUrl(URL.createObjectURL(file));
 
-      const filePath = res.filePaths[0];
-      const fileName = filePath.split(/[\\/]/).pop();
-      const extension = fileName.split('.').pop().toLowerCase();
-      
-      const isVid = ['mp4', 'mkv', 'avi', 'mov', 'webm'].includes(extension);
+          // Reset scanning states
+          setSubtitles([]);
+          setProgressPercent(0);
+          setLogs([]);
+          setEta(null);
+          setCurrentScanTime(0);
 
-      if (!isVid) {
-        message.error('Chỉ hỗ trợ định dạng video (MP4, MKV, AVI, MOV, WEBM).');
-        return;
-      }
-
-      setSelectedFile({
-        name: fileName,
-        path: filePath,
-        extension: extension,
-      });
-
-      // Stream local media via media:// custom protocol
-      const streamUrl = `media://${filePath.replace(/\\/g, '/')}`;
-      setVideoUrl(streamUrl);
-      
-      // Reset scanning states
-      setSubtitles([]);
-      setProgressPercent(0);
-      setLogs([]);
-      setEta(null);
-      setCurrentScanTime(0);
-
-      addLog(`Đã tải video: ${fileName}`, 'success');
-      message.success('Tải video thành công!');
-    } catch (error) {
-      message.error('Không thể chọn video: ' + error.message);
+          addLog(`Đã tải video: ${file.name}`, 'success');
+          message.success('Tải video thành công!');
+        }
+      };
+      input.click();
     }
   };
 
@@ -452,6 +551,113 @@ const VideoSubExtractor = () => {
     }
   };
 
+  const startAudioSTTExtraction = async () => {
+    if (!selectedFile) {
+      message.warning('Vui lòng chọn tệp video trước!');
+      return;
+    }
+
+    const isElectron = window.electron && !window.electron.isWebMock;
+    const isWeb = !isElectron;
+    const apiKey = sttEngine === 'groq'
+      ? (activeGroqKey || (isWeb ? 'SERVER_KEY' : ''))
+      : (activeOpenaiKey || (isWeb ? 'SERVER_KEY' : ''));
+
+    if (!isWeb && !apiKey) {
+      message.error(`Vui lòng cấu hình API Key cho ${sttEngine === 'groq' ? 'Groq' : 'OpenAI'} trong phần Cài đặt.`);
+      return;
+    }
+
+    setIsScanning(true);
+    scanCancelRef.current = false;
+    setSubtitles([]);
+    setLogs([]);
+    setProgressPercent(10);
+    addLog(`Bắt đầu trích xuất bằng AI Whisper của ${sttEngine.toUpperCase()}...`, 'process');
+
+    try {
+      let videoPathOnServer = '';
+      if (isWeb) {
+        if (!selectedFile.fileObject) {
+          throw new Error('Không tìm thấy tệp video để tải lên.');
+        }
+        addLog('Đang tải tệp video lên máy chủ (có thể mất vài giây)...', 'process');
+        
+        const formData = new FormData();
+        formData.append('file', selectedFile.fileObject);
+        const token = localStorage.getItem('token') || localStorage.getItem('access_token') || '';
+        
+        const uploadRes = await fetch(`${BASE_URL_API}/api/video/upload-audio-segment`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`
+          },
+          body: formData,
+        });
+
+        if (!uploadRes.ok) {
+          throw new Error(`Upload video thất bại: ${uploadRes.status}`);
+        }
+        const uploadData = await uploadRes.json();
+        if (!uploadData.ok) {
+          throw new Error(uploadData.error || 'Tải video lên server thất bại.');
+        }
+        videoPathOnServer = uploadData.path;
+        addLog('Tải video lên server thành công!', 'success');
+        setProgressPercent(30);
+      } else {
+        videoPathOnServer = selectedFile.path;
+      }
+
+      // Extract Audio
+      addLog('Đang tiến hành trích xuất âm thanh từ video...', 'process');
+      let extractRes = null;
+      if (isElectron) {
+        extractRes = await window.electron.extractAudio(videoPathOnServer);
+      } else {
+        extractRes = await VideoRemakerService.extractAudio(videoPathOnServer, settings);
+      }
+
+      if (!extractRes.ok) {
+        throw new Error(extractRes.error || 'Trích xuất âm thanh thất bại.');
+      }
+      
+      const audioPath = extractRes.path;
+      addLog('Đã trích xuất tệp âm thanh thành công.', 'success');
+      setProgressPercent(60);
+
+      // Transcribe
+      addLog(`Đang nhận diện giọng nói bằng AI Whisper...`, 'process');
+      let transcribeRes = null;
+      if (isElectron) {
+        transcribeRes = await window.electron.transcribeAudio(audioPath, apiKey);
+      } else {
+        transcribeRes = await VideoRemakerService.transcribeAudio(audioPath, apiKey, { ...settings, provider: sttEngine });
+      }
+
+      if (!transcribeRes.ok) {
+        throw new Error(transcribeRes.error || 'Chuyển giọng nói thành văn bản thất bại.');
+      }
+
+      const srtText = transcribeRes.text;
+      addLog('Đã hoàn tất nhận diện giọng nói!', 'success');
+      setProgressPercent(90);
+
+      // Parse
+      const parsed = parseSRT(srtText);
+      setSubtitles(parsed);
+      setProgressPercent(100);
+      addLog(`Hoàn tất trích xuất! Tìm thấy ${parsed.length} dòng phụ đề.`, 'success');
+      message.success(`Dịch giọng nói thành công! Tìm thấy ${parsed.length} dòng.`);
+    } catch (err) {
+      addLog(`Lỗi xử lý Audio STT: ${err.message}`, 'error');
+      message.error(err.message);
+      setProgressPercent(0);
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
   const handleStopExtraction = () => {
     scanCancelRef.current = true;
   };
@@ -629,16 +835,18 @@ const VideoSubExtractor = () => {
                   />
                   
                   {/* Interactive Visual Crop Zone */}
-                  <div
-                    className={`crop-overlay ${isScanning ? 'scanning' : ''}`}
-                    style={{
-                      top: `${cropTop}%`,
-                      height: `${cropHeight}%`,
-                    }}
-                  >
-                    <div className="crop-label">Vùng Phụ Đề Quét OCR</div>
-                    <div className="laser-line"></div>
-                  </div>
+                  {extractMode === 'ocr' && (
+                    <div
+                      className={`crop-overlay ${isScanning ? 'scanning' : ''}`}
+                      style={{
+                        top: `${cropTop}%`,
+                        height: `${cropHeight}%`,
+                      }}
+                    >
+                      <div className="crop-label">Vùng Phụ Đề Quét OCR</div>
+                      <div className="laser-line"></div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="file-details">
@@ -649,8 +857,28 @@ const VideoSubExtractor = () => {
               </div>
             )}
 
-            {/* Subtitle Crop Position Configuration */}
             {selectedFile && (
+              <div style={{ marginTop: '20px', marginBottom: '20px' }}>
+                <div style={{ fontWeight: 600, marginBottom: '8px', fontSize: '13px', color: '#0d9488' }}>
+                  Phương thức trích xuất phụ đề:
+                </div>
+                <Segmented
+                  block
+                  size="large"
+                  value={extractMode}
+                  onChange={(val) => setExtractMode(val)}
+                  options={[
+                    { label: 'OCR chữ cứng chạy trên video (Local)', value: 'ocr' },
+                    { label: 'Nhận diện giọng nói thành văn bản (Audio STT)', value: 'stt' },
+                  ]}
+                  disabled={isScanning}
+                  className="custom-segmented"
+                />
+              </div>
+            )}
+
+            {/* Subtitle Crop Position Configuration */}
+            {extractMode === 'ocr' && selectedFile && (
               <div className="crop-control-box">
                 <div className="control-row">
                   <span className="control-title">
@@ -687,7 +915,7 @@ const VideoSubExtractor = () => {
             )}
 
             {/* Real-time AI Crop Preview */}
-            {selectedFile && (
+            {extractMode === 'ocr' && selectedFile && (
               <div className="crop-preview-box">
                 <div className="preview-title">
                   <Cpu size={16} /> Xem trước ảnh gửi AI (Thời gian thực):
@@ -704,125 +932,178 @@ const VideoSubExtractor = () => {
 
             <Divider style={{ margin: '24px 0' }} />
 
-            {/* OCR Options Configuration */}
+            {/* OCR/STT Options Configuration */}
             <div className="section-label">
-              <Settings size={18} /> Cài đặt thông số nhận diện OCR
+              <Settings size={18} /> {extractMode === 'ocr' ? 'Cài đặt thông số nhận diện OCR' : 'Cài đặt nhận diện giọng nói (STT)'}
             </div>
 
             <div className="settings-grid">
-              <Row gutter={[20, 20]}>
-                {/* Language Picker */}
-                <Col span={24}>
-                  <div className="extractor-option-box">
-                    <div className="option-header">
-                      <span className="option-title">Ngôn ngữ quét</span>
-                      <span className="option-value" style={{ textTransform: 'uppercase', color: 'var(--primary)' }}>
-                        {ocrLang === 'vie+eng' ? 'Tiếng Việt & Anh' : ocrLang === 'vie' ? 'Tiếng Việt' : ocrLang === 'eng' ? 'Tiếng Anh' : 'Tiếng Trung'}
-                      </span>
-                    </div>
-                    <Segmented
-                      block
-                      value={ocrLang}
-                      onChange={(val) => setOcrLang(val)}
-                      options={[
-                        { label: 'Việt + Anh', value: 'vie+eng' },
-                        { label: 'Việt', value: 'vie' },
-                        { label: 'Anh', value: 'eng' },
-                        { label: 'Trung', value: 'chi_sim' },
-                      ]}
-                      disabled={isScanning}
-                      className="custom-segmented"
-                    />
-                  </div>
-                </Col>
-
-                {/* Scan Speed/Interval */}
-                <Col span={24}>
-                  <div className="extractor-option-box">
-                    <div className="option-header">
-                      <span className="option-title">Tần suất quét (Bước nhảy giây)</span>
-                      <span className="option-value">Mỗi {scanInterval.toFixed(1)} giây</span>
-                    </div>
-                    <Slider
-                      min={0.2}
-                      max={3.0}
-                      step={0.1}
-                      value={scanInterval}
-                      onChange={(val) => setScanInterval(val)}
-                      disabled={isScanning}
-                      className="custom-slider"
-                      tooltip={{ formatter: (v) => `Mỗi ${v} giây` }}
-                    />
-                  </div>
-                </Col>
-
-                {/* Image Preprocessing Toggle */}
-                <Col span={24}>
-                  <div className="extractor-option-box">
-                    <div className="option-header" style={{ marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span className="option-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <Sparkles size={16} style={{ color: '#f59e0b' }} />
-                        Tối ưu hóa ảnh quét AI (Nhị phân hóa sắc nét)
-                      </span>
-                      <Switch
-                        checked={preprocessImage}
-                        onChange={(val) => setPreprocessImage(val)}
+              {extractMode === 'ocr' ? (
+                <Row gutter={[20, 20]}>
+                  {/* Language Picker */}
+                  <Col span={24}>
+                    <div className="extractor-option-box">
+                      <div className="option-header">
+                        <span className="option-title">Ngôn ngữ quét</span>
+                        <span className="option-value" style={{ textTransform: 'uppercase', color: 'var(--primary)' }}>
+                          {ocrLang === 'vie+eng' ? 'Tiếng Việt & Anh' : ocrLang === 'vie' ? 'Tiếng Việt' : ocrLang === 'eng' ? 'Tiếng Anh' : 'Tiếng Trung'}
+                        </span>
+                      </div>
+                      <Segmented
+                        block
+                        value={ocrLang}
+                        onChange={(val) => setOcrLang(val)}
+                        options={[
+                          { label: 'Việt + Anh', value: 'vie+eng' },
+                          { label: 'Việt', value: 'vie' },
+                          { label: 'Anh', value: 'eng' },
+                          { label: 'Trung', value: 'chi_sim' },
+                        ]}
                         disabled={isScanning}
+                        className="custom-segmented"
                       />
                     </div>
-                    <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b', lineHeight: '1.4', marginBottom: preprocessImage ? '12px' : 0 }}>
-                      Tự động chuyển đổi ảnh vùng cắt sang đen trắng sắc tương phản cao trước khi gửi cho AI. Khuyên dùng bật để tăng tỷ lệ đọc phụ đề cứng chuẩn xác &gt;98% và tránh nhiễu nền video.
-                    </p>
-                    {preprocessImage && (
-                      <div style={{ background: '#ffffff', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', marginTop: '8px' }}>
-                        <div className="option-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span className="option-title" style={{ fontSize: '0.85rem', color: '#475569', fontWeight: 600 }}>Ngưỡng lọc nhị phân (Độ tương phản chữ)</span>
-                          <span className="option-value" style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--primary)' }}>{binarizeThreshold}</span>
-                        </div>
-                        <Slider
-                          min={50}
-                          max={240}
-                          step={5}
-                          value={binarizeThreshold}
-                          onChange={(val) => setBinarizeThreshold(val)}
-                          disabled={isScanning}
-                          className="custom-slider"
-                          style={{ margin: '8px 0 0 0' }}
-                          tooltip={{ formatter: (v) => `Ngưỡng: ${v}` }}
-                        />
-                        <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px', lineHeight: '1.3' }}>
-                          * Nếu phụ đề màu vàng/sáng: giảm xuống (120-150). Nếu phụ đề màu trắng sáng/nền tối: tăng lên (180-210) để nét hơn. Xem ảnh trực tiếp ở ô Preview!
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </Col>
+                  </Col>
 
-                {/* Confidence threshold */}
-                <Col span={24}>
-                  <div className="extractor-option-box">
-                    <div className="option-header">
-                      <span className="option-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <Cpu size={16} style={{ color: '#0d9488' }} />
-                        Độ tin cậy nhận diện tối thiểu (Lọc nhiễu)
-                      </span>
-                      <span className="option-value">
-                        {minConfidence}%
-                      </span>
+                  {/* Scan Speed/Interval */}
+                  <Col span={24}>
+                    <div className="extractor-option-box">
+                      <div className="option-header">
+                        <span className="option-title">Tần suất quét (Bước nhảy giây)</span>
+                        <span className="option-value">Mỗi {scanInterval.toFixed(1)} giây</span>
+                      </div>
+                      <Slider
+                        min={0.2}
+                        max={3.0}
+                        step={0.1}
+                        value={scanInterval}
+                        onChange={(val) => setScanInterval(val)}
+                        disabled={isScanning}
+                        className="custom-slider"
+                        tooltip={{ formatter: (v) => `Mỗi ${v} giây` }}
+                      />
                     </div>
-                    <Slider
-                      min={30}
-                      max={90}
-                      step={5}
-                      value={minConfidence}
-                      onChange={(val) => setMinConfidence(val)}
-                      disabled={isScanning}
-                      className="custom-slider"
-                      tooltip={{ formatter: (v) => `Confidence >= ${v}%` }}
-                    />
-                  </div>
-                </Col>
-              </Row>
+                  </Col>
+
+                  {/* Image Preprocessing Toggle */}
+                  <Col span={24}>
+                    <div className="extractor-option-box">
+                      <div className="option-header" style={{ marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span className="option-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <Sparkles size={16} style={{ color: '#f59e0b' }} />
+                          Tối ưu hóa ảnh quét AI (Nhị phân hóa sắc nét)
+                        </span>
+                        <Switch
+                          checked={preprocessImage}
+                          onChange={(val) => setPreprocessImage(val)}
+                          disabled={isScanning}
+                        />
+                      </div>
+                      <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b', lineHeight: '1.4', marginBottom: preprocessImage ? '12px' : 0 }}>
+                        Tự động chuyển đổi ảnh vùng cắt sang đen trắng sắc tương phản cao trước khi gửi cho AI. Khuyên dùng bật để tăng tỷ lệ đọc phụ đề cứng chuẩn xác &gt;98% và tránh nhiễu nền video.
+                      </p>
+                      {preprocessImage && (
+                        <div style={{ background: '#ffffff', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', marginTop: '8px' }}>
+                          <div className="option-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span className="option-title" style={{ fontSize: '0.85rem', color: '#475569', fontWeight: 600 }}>Ngưỡng lọc nhị phân (Độ tương phản chữ)</span>
+                            <span className="option-value" style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--primary)' }}>{binarizeThreshold}</span>
+                          </div>
+                          <Slider
+                            min={50}
+                            max={240}
+                            step={5}
+                            value={binarizeThreshold}
+                            onChange={(val) => setBinarizeThreshold(val)}
+                            disabled={isScanning}
+                            className="custom-slider"
+                            style={{ margin: '8px 0 0 0' }}
+                            tooltip={{ formatter: (v) => `Ngưỡng: ${v}` }}
+                          />
+                          <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px', lineHeight: '1.3' }}>
+                            * Nếu phụ đề màu vàng/sáng: giảm xuống (120-150). Nếu phụ đề màu trắng sáng/nền tối: tăng lên (180-210) để nét hơn. Xem ảnh trực tiếp ở ô Preview!
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </Col>
+
+                  {/* Confidence threshold */}
+                  <Col span={24}>
+                    <div className="extractor-option-box">
+                      <div className="option-header">
+                        <span className="option-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <Cpu size={16} style={{ color: '#0d9488' }} />
+                          Độ tin cậy nhận diện tối thiểu (Lọc nhiễu)
+                        </span>
+                        <span className="option-value">
+                          {minConfidence}%
+                        </span>
+                      </div>
+                      <Slider
+                        min={30}
+                        max={90}
+                        step={5}
+                        value={minConfidence}
+                        onChange={(val) => setMinConfidence(val)}
+                        disabled={isScanning}
+                        className="custom-slider"
+                        tooltip={{ formatter: (v) => `Confidence >= ${v}%` }}
+                      />
+                    </div>
+                  </Col>
+                </Row>
+              ) : (
+                <Row gutter={[20, 20]}>
+                  {/* STT Engine Picker */}
+                  <Col span={24}>
+                    <div className="extractor-option-box">
+                      <div className="option-header">
+                        <span className="option-title">Mô hình AI nhận diện giọng nói</span>
+                        <span className="option-value" style={{ textTransform: 'uppercase', color: 'var(--primary)' }}>
+                          {sttEngine === 'groq' ? 'Groq Whisper (Free - Nhanh)' : 'OpenAI Whisper (Paid - Chuẩn)'}
+                        </span>
+                      </div>
+                      <Segmented
+                        block
+                        value={sttEngine}
+                        onChange={(val) => setSttEngine(val)}
+                        options={[
+                          { label: 'Groq (Miễn phí & Cực nhanh)', value: 'groq' },
+                          { label: 'OpenAI (Trả phí & Chính xác)', value: 'openai' },
+                        ]}
+                        disabled={isScanning}
+                        className="custom-segmented"
+                      />
+                    </div>
+                  </Col>
+
+                  {/* Engine Key Status Notice */}
+                  <Col span={24}>
+                    <div
+                      style={{
+                        background: sttEngine === 'groq' ? 'rgba(13, 148, 136, 0.05)' : 'rgba(59, 130, 246, 0.05)',
+                        padding: '16px',
+                        borderRadius: '12px',
+                        border: sttEngine === 'groq' ? '1px solid rgba(13, 148, 136, 0.2)' : '1px solid rgba(59, 130, 246, 0.2)',
+                        color: sttEngine === 'groq' ? '#0f766e' : '#1e40af',
+                        fontSize: '12.5px',
+                        lineHeight: '1.5'
+                      }}
+                    >
+                      <Sparkles size={14} style={{ color: '#f59e0b', display: 'inline', marginRight: '6px', verticalAlign: 'text-bottom' }} />
+                      {sttEngine === 'groq' ? (
+                        <>
+                          <b>Groq Whisper (Whisper-large-v3):</b> Nhận diện giọng nói siêu tốc trong vòng vài giây, hoàn toàn miễn phí. Đã tích hợp sẵn key dự phòng trên server nếu bạn không tự nhập trong phần Cài đặt.
+                        </>
+                      ) : (
+                        <>
+                          <b>OpenAI Whisper (Whisper-1):</b> Nhận diện giọng nói chất lượng cao nhất, tự động nhận biết ngôn ngữ gốc chuẩn xác. Bạn có thể sử dụng key OpenAI trả phí của mình hoặc hệ thống sẽ tự động dùng key server để xử lý.
+                        </>
+                      )}
+                    </div>
+                  </Col>
+                </Row>
+              )}
             </div>
 
             {/* Scan progress bar */}
@@ -846,11 +1127,11 @@ const VideoSubExtractor = () => {
                   type="primary"
                   size="large"
                   disabled={!selectedFile}
-                  onClick={startSubtitleExtraction}
+                  onClick={extractMode === 'ocr' ? startSubtitleExtraction : startAudioSTTExtraction}
                   className="extractor-btn start-btn"
                   icon={<Sparkles size={20} />}
                 >
-                  BẮT ĐẦU TRÍCH XUẤT PHỤ ĐỀ
+                  {extractMode === 'ocr' ? 'BẮT ĐẦU TRÍCH XUẤT PHỤ ĐỀ' : 'BẮT ĐẦU NHẬN DIỆN GIỌNG NÓI'}
                 </Button>
               ) : (
                 <Button
@@ -861,7 +1142,7 @@ const VideoSubExtractor = () => {
                   className="extractor-btn stop-btn"
                   icon={<StopCircle size={20} />}
                 >
-                  DỪNG QUÉT PHỤ ĐỀ
+                  {extractMode === 'ocr' ? 'DỪNG QUÉT PHỤ ĐỀ' : 'DỪNG NHẬN DIỆN GIỌNG NÓI'}
                 </Button>
               )}
             </div>
@@ -871,7 +1152,7 @@ const VideoSubExtractor = () => {
           <Col xs={24} lg={9}>
             {/* Live scanning logs */}
             <div className="section-label">
-              <Cpu size={18} /> Console Quét OCR
+              <Cpu size={18} /> {extractMode === 'ocr' ? 'Console Quét OCR' : 'Console Nhận diện Giọng nói'}
             </div>
 
             <Card variant="borderless" className="logs-card-inner">

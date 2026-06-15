@@ -30,7 +30,7 @@ import './MediaEnhancerStyles.scss';
 
 const { Title, Text } = Typography;
 
-const MediaEnhancer = () => {
+const MediaEnhancer = ({ settings }) => {
   const {
     selectedFile,
     setSelectedFile,
@@ -51,7 +51,7 @@ const MediaEnhancer = () => {
     handleOpenFolder,
     handleSelectHistoryItem,
     getPreviewUrl,
-  } = useMediaEnhancer();
+  } = useMediaEnhancer(settings);
 
   return (
     <div className="tool-container media-enhancer-container">
@@ -197,33 +197,71 @@ const MediaEnhancer = () => {
 
             <div className="settings-grid">
               <Row gutter={[20, 20]}>
-                {/* AI Model Selection */}
+                {/* Free vs Paid Selection */}
                 <Col span={24}>
                   <div style={{ fontWeight: 600, marginBottom: '8px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <Cpu size={14} style={{ color: '#0d9488' }} />
-                    Mô hình AI sử dụng:
+                    Phương thức xử lý hình ảnh/video:
                   </div>
                   <Segmented
                     block
-                    value={options.aiModel || 'realesr-animevideov3'}
-                    onChange={(val) => setOptions({ ...options, aiModel: val })}
+                    value={options.useLocalAI ? 'free' : 'paid'}
+                    onChange={(val) => setOptions({ ...options, useLocalAI: val === 'free' })}
                     options={[
-                      { label: 'Tối ưu tốc độ (Video/Nhanh)', value: 'realesr-animevideov3' },
-                      { label: 'Chất lượng cao (Ảnh/Chậm)', value: 'realesrgan-x4plus' },
+                      { label: 'Miễn phí (Xử lý thiết bị)', value: 'free' },
+                      { label: 'Trả phí (Xử lý Đám mây GPU - Đề xuất)', value: 'paid' },
                     ]}
                     className="custom-segmented"
                     disabled={loading}
+                    style={{ marginBottom: '12px' }}
                   />
-                  <div
-                    style={{
-                      color: '#0d9488',
-                      fontSize: '12px',
-                      marginTop: '8px',
-                      fontWeight: 500,
-                    }}
-                  >
-                    ✓ Sử dụng mô hình AI Real-ESRGAN chạy bằng GPU của máy tính. Miễn phí & Không giới hạn!
-                  </div>
+
+                  {options.useLocalAI ? (
+                    !(window.electron && !window.electron.isWebMock) ? (
+                      <Alert
+                        message="Cảnh báo môi trường chạy"
+                        description="Chế độ Miễn phí xử lý bằng phần cứng thiết bị chỉ khả dụng khi chạy trên ứng dụng Máy tính (Electron). Phiên bản Web chạy trên Hugging Face không hỗ trợ chạy offline. Vui lòng tải bản Electron hoặc chuyển sang chế độ 'Trả phí (Đám mây)'."
+                        type="warning"
+                        showIcon
+                        style={{ borderRadius: '10px' }}
+                      />
+                    ) : (
+                      <>
+                        <div style={{ fontWeight: 600, marginBottom: '8px', fontSize: '12px', color: '#64748b' }}>
+                          Mô hình AI Local sử dụng:
+                        </div>
+                        <Segmented
+                          block
+                          value={options.aiModel || 'realesr-animevideov3'}
+                          onChange={(val) => setOptions({ ...options, aiModel: val })}
+                          options={[
+                            { label: 'Tối ưu tốc độ (Video/Nhanh)', value: 'realesr-animevideov3' },
+                            { label: 'Chất lượng cao (Ảnh/Chậm)', value: 'realesrgan-x4plus' },
+                          ]}
+                          className="custom-segmented"
+                          disabled={loading}
+                        />
+                        <div style={{ color: '#0d9488', fontSize: '12px', marginTop: '8px', fontWeight: 500 }}>
+                          ✓ Sử dụng mô hình Real-ESRGAN Vulkan chạy trực tiếp trên GPU máy tính của bạn. Miễn phí hoàn toàn & Không giới hạn!
+                        </div>
+                      </>
+                    )
+                  ) : (
+                    <div
+                      style={{
+                        background: 'rgba(13, 148, 136, 0.05)',
+                        padding: '12px',
+                        borderRadius: '10px',
+                        border: '1px solid rgba(13, 148, 136, 0.2)',
+                        color: '#0f766e',
+                        fontSize: '12px',
+                        lineHeight: '1.4'
+                      }}
+                    >
+                      <Sparkles size={14} style={{ color: '#f59e0b', display: 'inline', marginRight: '6px', verticalAlign: 'text-bottom' }} />
+                      <b>Chế độ Trả phí (Đám mây GPU):</b> Xử lý hình ảnh và video siêu tốc (chỉ 2-5 giây) bằng thuật toán <b>CodeFormer SOTA</b> trên máy chủ GPU cao cấp của Fal.ai. Không tốn pin, không gây nóng máy và hoạt động mượt mà 100% trên cả điện thoại di động.
+                    </div>
+                  )}
                 </Col>
 
                 {/* Always show resolution */}

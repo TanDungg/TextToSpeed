@@ -94,6 +94,7 @@ export const useVideoRemaker = (settings) => {
     publishFacebook: false,
     publishTiktok: false,
     blurBorder: false,
+    usePremiumAI: true,
   });
   const [showSrtModal, setShowSrtModal] = useState(false);
   const [srtText, setSrtText] = useState('');
@@ -164,7 +165,9 @@ export const useVideoRemaker = (settings) => {
     }
 
     const isWeb = !window.electron || window.electron.isWebMock;
-    const effectiveOpenAIKey = settings?.openaiKey || (isWeb ? 'SERVER_KEY' : '');
+    const effectiveOpenAIKey = options.usePremiumAI
+      ? (settings?.openaiKey || (isWeb ? 'SERVER_KEY' : ''))
+      : (settings?.groqKey || (isWeb ? 'SERVER_KEY' : ''));
     const effectiveGeminiKey = settings?.geminiKey || (isWeb ? 'SERVER_KEY' : '');
 
     setLoading(true);
@@ -251,7 +254,7 @@ export const useVideoRemaker = (settings) => {
         } else if (originalAudioPath) {
           try {
             if (effectiveOpenAIKey) {
-              const isGroq = effectiveOpenAIKey.startsWith('gsk_');
+              const isGroq = !options.usePremiumAI || effectiveOpenAIKey.startsWith('gsk_');
               const providerName = isGroq
                 ? 'Groq'
                 : effectiveOpenAIKey === 'SERVER_KEY'
@@ -265,7 +268,8 @@ export const useVideoRemaker = (settings) => {
               const sttRes = await VideoRemakerService.transcribeAudio(
                 originalAudioPath,
                 effectiveOpenAIKey,
-                settings
+                settings,
+                options.usePremiumAI ? 'openai' : 'groq'
               );
 
               if (sttRes.ok) {
@@ -496,16 +500,21 @@ CHỈ trả về duy nhất chuỗi nội dung SRT thuần túy. Tuyệt đối 
 
           try {
             let audioBlob = null;
-            // Dùng Edge TTS làm mặc định nếu không cấu hình FPT/OpenAI
-            if (settings?.fptKey) {
-              audioBlob = await TTSProvider.speakWithFPT(seg.text_vi, 'banmai', settings.fptKey);
-            } else if (settings?.openaiKey && !settings.openaiKey.startsWith('gsk_')) {
-              audioBlob = await TTSProvider.speakWithOpenAI(
-                seg.text_vi,
-                'alloy',
-                settings.openaiKey
-              );
+            if (options.usePremiumAI) {
+              // Dùng Edge TTS làm mặc định nếu không cấu hình FPT/OpenAI
+              if (settings?.fptKey) {
+                audioBlob = await TTSProvider.speakWithFPT(seg.text_vi, 'banmai', settings.fptKey);
+              } else if (settings?.openaiKey && !settings.openaiKey.startsWith('gsk_')) {
+                audioBlob = await TTSProvider.speakWithOpenAI(
+                  seg.text_vi,
+                  'alloy',
+                  settings.openaiKey
+                );
+              } else {
+                audioBlob = await TTSProvider.speakWithEdge(seg.text_vi, 'vi-VN-HoaiMyNeural');
+              }
             } else {
+              // Free Mode forces Edge TTS
               audioBlob = await TTSProvider.speakWithEdge(seg.text_vi, 'vi-VN-HoaiMyNeural');
             }
 

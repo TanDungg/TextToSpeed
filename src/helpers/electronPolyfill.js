@@ -117,5 +117,17 @@ if (typeof window !== 'undefined' && !window.electron) {
     showItemInFolder: (filePath) => {
       console.log('Mở thư mục chứa file:', filePath);
     },
+    aiGenerateBlendedImage: async (args) => {
+      const response = await fetch('/api/vton-cloud', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(args),
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        return { ok: false, error: err.error || 'Ghép đồ VTON thất bại.' };
+      }
+      return await response.json();
+    },
   };
 }

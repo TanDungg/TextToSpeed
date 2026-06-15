@@ -3,7 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('electron', {
   send: (channel, data) => {
     // Các kênh được phép gửi đi
-    const validChannels = ['start-autoclick', 'stop-autoclick'];
+    const validChannels = [];
     if (validChannels.includes(channel)) {
       ipcRenderer.send(channel, data);
     }
@@ -62,15 +62,7 @@ contextBridge.exposeInMainWorld('electron', {
   mediaEnhance: (inputPath, type, options) => {
     return ipcRenderer.invoke('media-enhance', { inputPath, type, options });
   },
-  lofiSearchMetadata: (url) => {
-    return ipcRenderer.invoke('lofi-search-metadata', { url });
-  },
-  lofiSearchBeats: (key, bpm) => {
-    return ipcRenderer.invoke('lofi-search-beats', { key, bpm });
-  },
-  lofiDownloadPair: (url, beatUrl, title) => {
-    return ipcRenderer.invoke('lofi-download-pair', { url, beatUrl, title });
-  },
+
   selectDirectory: () => {
     return ipcRenderer.invoke('select-directory');
   },
@@ -83,9 +75,12 @@ contextBridge.exposeInMainWorld('electron', {
   aiImageToVideo: (data) => {
     return ipcRenderer.invoke('ai-image-to-video', data);
   },
+  aiCharacterAnimate: (data) => {
+    return ipcRenderer.invoke('ai-character-animate', data);
+  },
   on: (channel, func) => {
     // Các kênh được phép lắng nghe
-    const validChannels = ['autoclick-status-changed', 'media-enhance-progress'];
+    const validChannels = ['media-enhance-progress'];
     if (validChannels.includes(channel)) {
       const subscription = (event, ...args) => func(...args);
       ipcRenderer.on(channel, subscription);

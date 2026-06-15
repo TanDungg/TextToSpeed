@@ -313,14 +313,32 @@ const VideoRemaker = ({ settings }) => {
                     </Checkbox>
 
                     {options.transcribe && (
-                      <div style={{ marginBottom: 16 }}>
-                        <Checkbox
-                          checked={options.reviewSrt}
-                          onChange={(e) => setOptions({ ...options, reviewSrt: e.target.checked })}
-                        >
-                          Kiểm tra & Sửa phụ đề trước khi kết xuất
-                        </Checkbox>
-                      </div>
+                      <>
+                        <div style={{ marginBottom: 16 }}>
+                          <Checkbox
+                            checked={options.reviewSrt}
+                            onChange={(e) => setOptions({ ...options, reviewSrt: e.target.checked })}
+                          >
+                            Kiểm tra & Sửa phụ đề trước khi kết xuất
+                          </Checkbox>
+                        </div>
+                        <div style={{ marginBottom: 16 }}>
+                          <p style={{ marginBottom: 6, fontSize: 13, color: '#475569', fontWeight: 600 }}>
+                            Chế độ dịch thuật & lồng tiếng AI:
+                          </p>
+                          <Select
+                            size="large"
+                            value={options.usePremiumAI ? 'premium' : 'free'}
+                            style={{ width: '100%' }}
+                            onChange={(val) => setOptions({ ...options, usePremiumAI: val === 'premium' })}
+                            options={[
+                              { value: 'free', label: 'Miễn phí (Groq Whisper + Edge TTS)' },
+                              { value: 'premium', label: 'Trả phí (OpenAI Whisper + OpenAI/FPT TTS - Độ chính xác cao)' },
+                            ]}
+                            className="custom-select"
+                          />
+                        </div>
+                      </>
                     )}
 
                     <Select
