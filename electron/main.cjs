@@ -2161,6 +2161,163 @@ ipcMain.handle(
 );
 
 ipcMain.handle(
+  'gemini-generate-image-flow',
+  async (event, { prompt, model, geminiKey, referenceImageBase64 }) => {
+    const axios = require('axios');
+    const fs = require('fs');
+    const path = require('path');
+    
+    try {
+      const selectedModel = model || 'gemini-3.1-flash-image';
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${geminiKey}`;
+      
+      const parts = [{ text: prompt }];
+      if (referenceImageBase64) {
+        const cleanBase64 = referenceImageBase64.replace(/^data:image\/\w+;base64,/, '');
+        parts.push({
+          inlineData: {
+            mimeType: 'image/jpeg',
+            data: cleanBase64
+          }
+        });
+      }
+
+      const payload = {
+        contents: [{ parts }],
+        generationConfig: {
+          responseModalities: ['IMAGE'],
+          candidateCount: 1
+        }
+      };
+
+      const response = await axios.post(url, payload, {
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      const base64Data = response.data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (!base64Data) {
+        throw new Error(response.data?.error?.message || 'Không nhận được dữ liệu hình ảnh từ Google AI Studio.');
+      }
+
+      const tempDir = path.join(app.getPath('downloads'), 'SmartRemaker', 'temp_flow');
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+
+      const filename = `flow_img_${Date.now()}.png`;
+      const outputPath = path.join(tempDir, filename);
+      fs.writeFileSync(outputPath, Buffer.from(base64Data, 'base64'));
+
+      return { ok: true, filePath: outputPath };
+    } catch (error) {
+      console.error('Lỗi sinh ảnh bằng Gemini:', error.response?.data || error.message);
+      const errMsg = error.response?.data?.error?.message || error.message || '';
+      return { ok: false, error: errMsg };
+    }
+  }
+);
+
+ipcMain.handle(
+  'gemini-generate-video-flow',
+  async (event, { prompt, model, geminiKey, referenceImageBase64, durationSeconds, aspectRatio }) => {
+    const axios = require('axios');
+    const fs = require('fs');
+    const path = require('path');
+
+    try {
+      const selectedModel = model || 'veo-3.0-generate-001';
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:predictLongRunning?key=${geminiKey}`;
+
+      const instance = {
+        prompt: prompt || 'high quality, realistic motion'
+      };
+
+      if (referenceImageBase64) {
+        const cleanBase64 = referenceImageBase64.replace(/^data:image\/\w+;base64,/, '');
+        instance.image = {
+          bytesBase64Encoded: cleanBase64,
+          mimeType: 'image/jpeg'
+        };
+      }
+
+      const payload = {
+        instances: [instance],
+        parameters: {
+          aspectRatio: aspectRatio || '16:9',
+          durationSeconds: durationSeconds || 5
+        }
+      };
+
+      const createRes = await axios.post(url, payload, {
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      const operationName = createRes.data?.name;
+      if (!operationName) {
+        throw new Error(createRes.data?.error?.message || 'Không khởi tạo được tiến trình tạo video trên Google Veo');
+      }
+
+      // Polling LRO
+      let done = false;
+      const maxRetries = 60; // 5 mins
+      let attempts = 0;
+      let finalResponse = null;
+
+      while (!done && attempts < maxRetries) {
+        await new Promise((r) => setTimeout(r, 5000));
+        attempts++;
+
+        const checkUrl = `https://generativelanguage.googleapis.com/v1beta/${operationName}?key=${geminiKey}`;
+        const checkRes = await axios.get(checkUrl);
+
+        if (checkRes.data?.error) {
+          throw new Error(`Google Veo trả về lỗi: ${checkRes.data.error.message}`);
+        }
+
+        if (checkRes.data?.done) {
+          done = true;
+          finalResponse = checkRes.data.response;
+          break;
+        }
+      }
+
+      if (!done || !finalResponse) {
+        throw new Error('Hết thời gian chờ tạo video từ Google Veo');
+      }
+
+      const videoUri =
+        finalResponse?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri ||
+        finalResponse?.predictions?.[0]?.video?.uri ||
+        finalResponse?.predictions?.[0]?.uri;
+
+      if (!videoUri) {
+        throw new Error('Google Veo không trả về đường dẫn tải video');
+      }
+
+      const downloadUrl = videoUri.includes('?')
+        ? `${videoUri}&key=${geminiKey}`
+        : `${videoUri}?key=${geminiKey}`;
+      const videoRes = await axios.get(downloadUrl, { responseType: 'arraybuffer' });
+
+      const tempDir = path.join(app.getPath('downloads'), 'SmartRemaker', 'temp_flow');
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+
+      const filename = `flow_vid_${Date.now()}.mp4`;
+      const outputPath = path.join(tempDir, filename);
+      fs.writeFileSync(outputPath, Buffer.from(videoRes.data));
+
+      return { ok: true, filePath: outputPath };
+    } catch (error) {
+      console.error('Lỗi sinh video bằng Veo:', error.response?.data || error.message);
+      const errMsg = error.response?.data?.error?.message || error.message || '';
+      return { ok: false, error: errMsg };
+    }
+  }
+);
+
+ipcMain.handle(
   'ai-character-animate',
   async (
     event,

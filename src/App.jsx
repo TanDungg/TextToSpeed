@@ -8,6 +8,7 @@ import MediaEnhancer from './routes/MediaEnhancer/MediaEnhancer';
 import VideoSubExtractor from './routes/VideoSubExtractor/VideoSubExtractor';
 import BatchImageGenerator from './routes/BatchImageGenerator/BatchImageGenerator';
 import CharacterAnimator from './routes/CharacterAnimator/CharacterAnimator';
+import FlowStudio from './routes/FlowStudio/FlowStudio';
 import SettingsModal from './components/Setting/SettingsModal';
 import {
   SoundOutlined,
@@ -129,6 +130,12 @@ const App = () => {
       icon: <PlayCircleOutlined />,
       label: 'Tạo động tác ảnh',
       children: <CharacterAnimator globalSettings={settings} />,
+    },
+    {
+      key: '7',
+      icon: <AppstoreOutlined />,
+      label: 'Google Flow',
+      children: <FlowStudio globalSettings={settings} />,
     },
   ];
 
