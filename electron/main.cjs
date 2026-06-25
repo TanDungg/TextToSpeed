@@ -197,15 +197,27 @@ async function handleVideoDownload(event, { url }) {
   const execAsync = util.promisify(exec);
 
   const timestamp = Date.now();
-  const sessionDir = path.join(app.getPath('downloads'), 'SmartRemaker', 'output', 'VN', `${timestamp}_vi`);
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const dateStr = `${pad(now.getDate())}-${pad(now.getMonth() + 1)}-${now.getFullYear()}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+  let baseDir = path.join(app.getPath('downloads'), 'SmartRemaker');
+  if (fs.existsSync('D:\\')) {
+    baseDir = 'D:\\SmartRemaker';
+  }
+  const sessionDir = path.join(baseDir, dateStr);
   if (!fs.existsSync(sessionDir)) {
     fs.mkdirSync(sessionDir, { recursive: true });
+  }
+
+  let extraArgs = '';
+  if (url.includes('bilibili.com') || url.includes('bili.video') || url.includes('acg.tv')) {
+    extraArgs = ' --add-header "Origin:https://www.bilibili.com" --add-header "Referer:https://www.bilibili.com/"';
   }
 
   let videoTitle = '';
   let videoDescription = '';
   try {
-    const infoCmd = `yt-dlp --print "%(title)s" --print "%(description)s" --no-warnings --no-playlist "${url}"`;
+    const infoCmd = `yt-dlp${extraArgs} --print "%(title)s" --print "%(description)s" --no-warnings --no-playlist "${url}"`;
     const { stdout } = await execAsync(infoCmd);
     const parts = stdout.trim().split('\n');
     videoTitle = parts[0] || '';
@@ -215,7 +227,7 @@ async function handleVideoDownload(event, { url }) {
   }
 
   const outputPath = path.join(sessionDir, `original_${timestamp}.mp4`);
-  const command = `yt-dlp --js-runtimes node --no-playlist --ignore-errors --write-auto-subs --write-subs --sub-langs "en,vi,zh" -f "bv[ext=mp4][vcodec^=avc1]+ba[ext=m4a]/mp4/b" --merge-output-format mp4 -o "${outputPath}" "${url}"`;
+  const command = `yt-dlp${extraArgs} --js-runtimes node --no-playlist --ignore-errors --write-auto-subs --write-subs --sub-langs "en,vi,zh" -f "bv[ext=mp4][vcodec^=avc1]+ba[ext=m4a]/mp4/b" --merge-output-format mp4 -o "${outputPath}" "${url}"`;
 
   try {
     await execAsync(command);

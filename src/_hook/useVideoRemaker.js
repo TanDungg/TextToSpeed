@@ -736,6 +736,7 @@ Hãy trả về duy nhất chuỗi JSON có cấu trúc như sau, không bọc t
         return updated;
       });
     } catch (err) {
+      setStatus('idle');
       addLog(`Lỗi: ${err.message}`, 'error');
       message.error(err.message);
     } finally {
