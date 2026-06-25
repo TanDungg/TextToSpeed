@@ -127,14 +127,14 @@ export const VideoRemakerService = {
     return await handleJsonResponse(response, 'Đăng tải video từ Cloud thất bại.');
   },
 
-  transcribeAudio: async (audioPath, apiKey, settings) => {
+  transcribeAudio: async (audioPath, apiKey, settings, provider) => {
     if (!shouldCallCloud(settings)) {
       return await window.electron.transcribeAudio(audioPath, apiKey);
     }
     const response = await fetch(`${BASE_URL_API}/api/transcribe-audio`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ audioPath, apiKey }),
+      body: JSON.stringify({ audioPath, apiKey, provider }),
     });
     return await handleJsonResponse(response, 'Nhận diện giọng nói từ Cloud thất bại.');
   },

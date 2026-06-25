@@ -3,21 +3,19 @@ import { Button } from 'antd';
 import { useAuth } from './_hook/useAuth';
 import { BASE_URL_API } from './constants/config';
 import TextToSpeed from './routes/TextToSpeed/TextToSpeed';
-import AutoClick from './routes/AutoClick/AutoClick';
 import VideoRemaker from './routes/VideoRemaker/VideoRemaker';
 import MediaEnhancer from './routes/MediaEnhancer/MediaEnhancer';
 import VideoSubExtractor from './routes/VideoSubExtractor/VideoSubExtractor';
-import LofiHelper from './routes/LofiHelper/LofiHelper';
 import BatchImageGenerator from './routes/BatchImageGenerator/BatchImageGenerator';
+import CharacterAnimator from './routes/CharacterAnimator/CharacterAnimator';
+import FlowStudio from './routes/FlowStudio/FlowStudio';
 import SettingsModal from './components/Setting/SettingsModal';
 import {
   SoundOutlined,
   SettingOutlined,
-  ThunderboltOutlined,
   PlayCircleOutlined,
   PictureOutlined,
   FileTextOutlined,
-  CustomerServiceOutlined,
   AppstoreOutlined,
   MenuOutlined,
   UserOutlined,
@@ -87,6 +85,8 @@ const App = () => {
       googleKey: '',
       geminiKey: '',
       replicateKey: '',
+      falKey: '',
+      groqKey: '',
     };
   });
 
@@ -103,39 +103,39 @@ const App = () => {
     },
     {
       key: '2',
-      icon: <ThunderboltOutlined />,
-      label: 'Auto Click',
-      children: <AutoClick />,
-    },
-    {
-      key: '3',
       icon: <PlayCircleOutlined />,
       label: 'Video Remaker',
       children: <VideoRemaker settings={settings} />,
     },
     {
-      key: '4',
+      key: '3',
       icon: <PictureOutlined />,
       label: 'Làm nét Ảnh/Video',
-      children: <MediaEnhancer />,
+      children: <MediaEnhancer settings={settings} />,
+    },
+    {
+      key: '4',
+      icon: <FileTextOutlined />,
+      label: 'Trích xuất Phụ đề',
+      children: <VideoSubExtractor settings={settings} />,
     },
     {
       key: '5',
-      icon: <FileTextOutlined />,
-      label: 'Trích xuất Phụ đề',
-      children: <VideoSubExtractor />,
-    },
-    {
-      key: '6',
-      icon: <CustomerServiceOutlined />,
-      label: 'Hỗ trợ Lofi Remix',
-      children: <LofiHelper settings={settings} />,
-    },
-    {
-      key: '7',
       icon: <AppstoreAddOutlined />,
       label: 'Sản xuất ảnh loạt',
       children: <BatchImageGenerator globalSettings={settings} />,
+    },
+    {
+      key: '6',
+      icon: <PlayCircleOutlined />,
+      label: 'Tạo động tác ảnh',
+      children: <CharacterAnimator globalSettings={settings} />,
+    },
+    {
+      key: '7',
+      icon: <AppstoreOutlined />,
+      label: 'Google Flow',
+      children: <FlowStudio globalSettings={settings} />,
     },
   ];
 

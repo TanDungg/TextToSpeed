@@ -156,12 +156,12 @@ const SettingsModal = ({ open, onCancel, settings, onSave }) => {
 
         <Divider orientation="left">
           <Space>
-            <KeyOutlined /> Cấu hình OpenAI / Groq (Tốc độ cao)
+            <KeyOutlined /> Cấu hình OpenAI (Dịch & Lồng tiếng)
           </Space>
         </Divider>
 
         <Form.Item
-          label="OpenAI / Groq API Key"
+          label="OpenAI API Key"
           name="openaiKey"
           extra={
             <span style={{ fontSize: '11px', color: '#8c8c8c' }}>
@@ -169,38 +169,57 @@ const SettingsModal = ({ open, onCancel, settings, onSave }) => {
             </span>
           }
         >
-          <Input.Password placeholder="Nhập sk-... hoặc gsk_..." />
+          <Input.Password placeholder="Nhập sk-..." />
         </Form.Item>
         <Alert
           message={
             <div style={{ fontSize: '12px' }}>
-              <Text strong>Cách lấy Key:</Text>
-              <br />•{' '}
-              <Text strong style={{ color: '#dc2626' }}>
-                Để dùng Groq (Nhẹ, Miễn phí & Cực nhanh):
-              </Text>
+              <Text strong>Cách lấy Key OpenAI (Trả phí):</Text>
+              <br />
+              1. Truy cập{' '}
+              <Link href="https://platform.openai.com/api-keys" target="_blank">
+                OpenAI API Keys <LinkOutlined />
+              </Link>
+              .<br />
+              2. Tạo key và dán mã bắt đầu bằng <Text code>sk-...</Text>.
+            </div>
+          }
+          type="success"
+          showIcon
+          style={{ marginBottom: '24px' }}
+        />
+
+        <Divider orientation="left">
+          <Space>
+            <KeyOutlined /> Cấu hình Groq API Key (Nhận diện giọng nói Free/Paid)
+          </Space>
+        </Divider>
+
+        <Form.Item
+          label="Groq API Key"
+          name="groqKey"
+          extra={
+            <span style={{ fontSize: '11px', color: '#8c8c8c' }}>
+              Để trống hoặc nhập 'SERVER_KEY' để sử dụng key cài sẵn trên Server
+            </span>
+          }
+        >
+          <Input.Password placeholder="Nhập gsk_..." />
+        </Form.Item>
+        <Alert
+          message={
+            <div style={{ fontSize: '12px' }}>
+              <Text strong>Cách lấy Key Groq (Miễn phí & Cực nhanh):</Text>
               <br />
               1. Truy cập{' '}
               <Link href="https://console.groq.com/keys" target="_blank">
                 Groq Console <LinkOutlined />
               </Link>
               .<br />
-              2. Nhấn <Text code>Create API Key</Text> và dán mã bắt đầu bằng{' '}
-              <Text code>gsk_...</Text> vào ô trên.
-              <br />
-              <div style={{ marginTop: '8px' }}>
-                • <Text strong>Để dùng OpenAI (Trả phí):</Text>
-                <br />
-                1. Truy cập{' '}
-                <Link href="https://platform.openai.com/api-keys" target="_blank">
-                  OpenAI API Keys <LinkOutlined />
-                </Link>
-                .<br />
-                2. Tạo key và dán mã bắt đầu bằng <Text code>sk-...</Text>.
-              </div>
+              2. Nhấn <Text code>Create API Key</Text> và dán mã bắt đầu bằng <Text code>gsk_...</Text>.
             </div>
           }
-          type="success"
+          type="info"
           showIcon
           style={{ marginBottom: '24px' }}
         />
@@ -330,6 +349,41 @@ const SettingsModal = ({ open, onCancel, settings, onSave }) => {
               </Link>
               .<br />
               2. Đăng ký tài khoản và tạo một <Text code>API Token</Text> mới.
+            </div>
+          }
+          type="info"
+          showIcon
+          style={{ marginBottom: '24px' }}
+        />
+
+        <Divider orientation="left">
+          <Space>
+            <KeyOutlined /> Cấu hình Fal.ai (Làm nét & Thử đồ AI)
+          </Space>
+        </Divider>
+
+        <Form.Item
+          label="Fal.ai API Key"
+          name="falKey"
+          extra={
+            <span style={{ fontSize: '11px', color: '#8c8c8c' }}>
+              Dùng cho bước làm nét khuôn mặt CodeFormer & Thử đồ Kolors-VTON
+            </span>
+          }
+        >
+          <Input.Password placeholder="Dán Fal.ai API Key bắt đầu bằng fal_..." />
+        </Form.Item>
+        <Alert
+          message={
+            <div style={{ fontSize: '12px' }}>
+              <Text strong>Cách lấy Fal.ai API Key:</Text>
+              <br />
+              1. Truy cập{' '}
+              <Link href="https://fal.ai/dashboard/keys" target="_blank">
+                Fal.ai Keys <LinkOutlined />
+              </Link>
+              .<br />
+              2. Tạo khóa và sao chép mã dán vào ô trên.
             </div>
           }
           type="info"

@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { message } from 'antd';
 import MediaEnhancerService from '../_service/mediaEnhancer.service';
 
-export const useMediaEnhancer = () => {
+export const useMediaEnhancer = (settings) => {
   const [selectedFile, setSelectedFile] = useState(null); // { name, path, type, size, extension, fileObject }
   const [loading, setLoading] = useState(false);
   const [percent, setPercent] = useState(0);
@@ -177,6 +177,9 @@ export const useMediaEnhancer = () => {
 
     const isElectron = window.electron && !window.electron.isWebMock;
 
+    const falKey = settings?.falKey || JSON.parse(localStorage.getItem('tts_settings') || '{}').falKey || '';
+    const enhancedOptions = { ...options, falKey };
+
     try {
       if (isElectron) {
         addLog('Khởi tạo quy trình nâng cấp chất lượng bằng AI Local...', 'process');
@@ -185,7 +188,7 @@ export const useMediaEnhancer = () => {
         const result = await MediaEnhancerService.mediaEnhance(
           selectedFile.path,
           selectedFile.type,
-          options
+          enhancedOptions
         );
 
         if (!result.ok) {
@@ -222,7 +225,7 @@ export const useMediaEnhancer = () => {
         const result = await MediaEnhancerService.mediaEnhance(
           selectedFile.fileObject,
           selectedFile.type,
-          options
+          enhancedOptions
         );
 
         if (!result.ok) {

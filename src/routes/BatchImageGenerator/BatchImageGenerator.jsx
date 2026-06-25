@@ -61,6 +61,12 @@ const BatchImageGenerator = ({ globalSettings }) => {
       ? JSON.parse(localStorage.getItem('tts_settings')).replicateKey
       : '') ||
     '';
+  const activeFalKey =
+    globalSettings?.falKey ||
+    (localStorage.getItem('tts_settings')
+      ? JSON.parse(localStorage.getItem('tts_settings')).falKey
+      : '') ||
+    '';
 
   const [settings, setSettings] = useState(() => {
     const saved = localStorage.getItem('batch_gen_settings');
@@ -375,6 +381,12 @@ const BatchImageGenerator = ({ globalSettings }) => {
       );
       return;
     }
+    if (!activeFalKey) {
+      message.warning(
+        'Vui lòng điền Fal.ai API Key trong phần Cài đặt hệ thống để sử dụng tính năng thử đồ (VTON).'
+      );
+      return;
+    }
 
     setIsProcessing(true);
 
@@ -418,8 +430,11 @@ const BatchImageGenerator = ({ globalSettings }) => {
         const imageResult = await window.electron.aiGenerateBlendedImage({
           prompt: generatedPrompt,
           geminiKey: activeGeminiKey,
+          falKey: activeFalKey,
           outputDir: outputDir,
           index: i,
+          modelImageBase64: modelImage.base64,
+          productImageBase64: products[i].base64,
           imagenModel: settings.imagenModel,
         });
 
@@ -540,10 +555,14 @@ const BatchImageGenerator = ({ globalSettings }) => {
       key: 'results',
       render: (_, record) => {
         const localImgUrl = record.imageResult
-          ? `media://${encodeURIComponent(record.imageResult)}`
+          ? (record.imageResult.startsWith('http://') || record.imageResult.startsWith('https://') || record.imageResult.startsWith('/')
+            ? record.imageResult
+            : `media://${encodeURIComponent(record.imageResult)}`)
           : '';
         const localVidUrl = record.videoResult
-          ? `media://${encodeURIComponent(record.videoResult)}`
+          ? (record.videoResult.startsWith('http://') || record.videoResult.startsWith('https://') || record.videoResult.startsWith('/')
+            ? record.videoResult
+            : `media://${encodeURIComponent(record.videoResult)}`)
           : '';
 
         return (
